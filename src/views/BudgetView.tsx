@@ -492,10 +492,15 @@ export const BudgetView: React.FC = () => {
 
     promptAccountSelection(`Cuenta para realizar el abono`, (account) => {
       const newRemaining = Math.max(0, debt.remainingAmount - amount);
-      updateDebt({
-        ...debt,
-        remainingAmount: newRemaining
-      });
+      if (newRemaining === 0) {
+        deleteDebt(debt.id);
+        alert('🎉 ¡Deuda totalmente saldada y eliminada!');
+      } else {
+        updateDebt({
+          ...debt,
+          remainingAmount: newRemaining
+        });
+      }
 
       const now = new Date();
       addTransaction({
@@ -536,8 +541,8 @@ export const BudgetView: React.FC = () => {
         icon: 'ArrowUpRight'
       });
       
-      updateDebt({ ...debt, remainingAmount: 0 });
-      alert('Deuda liquidada y registrada como gasto.');
+      deleteDebt(debt.id);
+      alert('Deuda liquidada y eliminada con éxito.');
     });
   };
 
@@ -559,8 +564,8 @@ export const BudgetView: React.FC = () => {
         icon: 'ArrowDownLeft'
       });
       
-      updateDebt({ ...debt, remainingAmount: 0 });
-      alert('Préstamo cobrado y registrado como ingreso.');
+      deleteDebt(debt.id);
+      alert('Préstamo cobrado y eliminado con éxito.');
     });
   };
 
