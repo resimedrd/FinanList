@@ -145,6 +145,7 @@ export const WelcomeTour: React.FC<WelcomeTourProps> = ({ setActiveTab, onClose 
           gap: '10px',
           zIndex: 100000,
           pointerEvents: 'auto',
+          transform: currentStep.placement === 'top' ? 'translateY(-100%)' : 'none',
           transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
           animation: 'scaleIn 0.2s ease-out'
         }}>
