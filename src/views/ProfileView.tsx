@@ -337,6 +337,7 @@ export const ProfileView: React.FC = () => {
               onChange={(e) => setCurrency(e.target.value)}
               className="input-field"
             >
+              <option value="RD$">Peso Dominicano (RD$)</option>
               <option value="$">Dólar ($)</option>
               <option value="€">Euro (€)</option>
               <option value="COL$">Peso Colombiano (COL$)</option>

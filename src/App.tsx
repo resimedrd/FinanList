@@ -12,8 +12,35 @@ import { DynamicIcon } from './components/DynamicIcon';
 import { Transaction } from './models/types';
 
 const MainLayout: React.FC = () => {
-  const { isAuthenticated, activeTab, setActiveTab, isOnboarded } = useApp();
+  const { isAuthenticated, activeTab, setActiveTab, isOnboarded, profile } = useApp();
   
+  // Apply theme and accent color globally
+  React.useEffect(() => {
+    if (!profile) return;
+    
+    // Apply theme
+    const isDark = profile.theme === 'dark' || 
+                   (profile.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+
+    // Apply accent color
+    if (profile.accentColor) {
+      document.documentElement.style.setProperty('--color-primary', profile.accentColor);
+      
+      const hex = profile.accentColor.replace('#', '');
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
+        document.documentElement.style.setProperty('--color-primary-light', `rgba(${r}, ${g}, ${b}, 0.1)`);
+      }
+    }
+  }, [profile.theme, profile.accentColor]);
+
   // Transaction Modal state
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editTx, setEditTx] = useState<Transaction | undefined>(undefined);
