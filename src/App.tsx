@@ -42,23 +42,23 @@ const MainLayout: React.FC = () => {
     }
   }, [profile.theme, profile.accentColor]);
 
-  // Lock app after 30 seconds of inactivity in background
+  // Lock app after 30 seconds of inactivity in background (Persisted in localStorage to avoid re-render resets)
   React.useEffect(() => {
     if (!profile.pinCode) return; // Only lock if a PIN is configured
 
-    let leaveTime: number | null = null;
-
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        leaveTime = Date.now();
+        localStorage.setItem('finanlist_leave_time', Date.now().toString());
       } else if (document.visibilityState === 'visible') {
-        if (leaveTime !== null) {
+        const leaveStr = localStorage.getItem('finanlist_leave_time');
+        if (leaveStr) {
+          const leaveTime = parseInt(leaveStr, 10);
           const diffSeconds = (Date.now() - leaveTime) / 1000;
           if (diffSeconds >= 30) {
             setAuthenticated(false);
           }
-          leaveTime = null; // Reset
         }
+        localStorage.removeItem('finanlist_leave_time'); // Clear
       }
     };
 
@@ -233,6 +233,7 @@ const MainLayout: React.FC = () => {
 
       {showWelcomeTour && (
         <WelcomeTour 
+          setActiveTab={setActiveTab}
           onClose={() => {
             localStorage.setItem('finanlist_tour_done', 'true');
             setShowWelcomeTour(false);

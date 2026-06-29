@@ -1,156 +1,208 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DynamicIcon } from './DynamicIcon';
 
+interface TourStep {
+  targetSelector: string;
+  title: string;
+  description: string;
+  tab: 'home' | 'history' | 'budget' | 'stats' | 'profile';
+  placement: 'top' | 'bottom';
+}
+
+const TOUR_STEPS: TourStep[] = [
+  {
+    targetSelector: '.bottom-nav button:nth-child(1)',
+    title: 'Resumen Financiero 🏠',
+    description: 'En esta pestaña de Inicio verás tu dinero disponible en efectivo y tarjetas, tu distribución de gastos y tu salud financiera semanal.',
+    tab: 'home',
+    placement: 'top'
+  },
+  {
+    targetSelector: '.fab-button',
+    title: 'Registrar Movimientos ⚡',
+    description: 'Toca el botón central "+" para agregar ingresos o gastos. Podrás seleccionar cuentas como Tarjeta o Efectivo con un solo toque y sin escribir.',
+    tab: 'home',
+    placement: 'top'
+  },
+  {
+    targetSelector: '.bottom-nav button:nth-child(4)',
+    title: 'Presupuestos y Planificación 📊',
+    description: 'Aquí defines tus límites de gasto. Al final del mes o cuando cobres, toca "Reiniciar Ciclos" para empezar desde cero conservando tu historial.',
+    tab: 'budget',
+    placement: 'top'
+  },
+  {
+    targetSelector: 'button[title*="montos"]',
+    title: 'Modo Incógnito 🔒',
+    description: 'Toca este icono de ojo en el encabezado para ocultar tus montos rápidamente cuando estés usando la aplicación en público.',
+    tab: 'home',
+    placement: 'bottom'
+  }
+];
+
 interface WelcomeTourProps {
+  setActiveTab: (tab: 'home' | 'history' | 'budget' | 'stats' | 'profile') => void;
   onClose: () => void;
 }
 
-export const WelcomeTour: React.FC<WelcomeTourProps> = ({ onClose }) => {
-  const [currentSlide, setCurrentSlide] = useState(0);
+export const WelcomeTour: React.FC<WelcomeTourProps> = ({ setActiveTab, onClose }) => {
+  const [stepIdx, setStepIdx] = useState(0);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  const currentStep = TOUR_STEPS[stepIdx];
 
-  const slides = [
-    {
-      title: '¡Bienvenido a FinanList! 🏦✨',
-      subtitle: 'Tu centro financiero inteligente',
-      description: 'Controla tus ingresos, gastos, deudas y metas de ahorro en un solo lugar seguro y sincronizado en la nube.',
-      icon: 'Wallet',
-      color: '#6366f1',
-    },
-    {
-      title: 'Presupuestos y Ciclos Reseteables 📊🔄',
-      subtitle: 'Límites a tu manera',
-      description: 'Establece presupuestos generales o por categorías, y reinicia el ciclo de consumo cuando consideres oportuno con un solo botón.',
-      icon: 'RefreshCw',
-      color: '#22c55e',
-    },
-    {
-      title: 'Registro Rápido e Inteligente ⚡💳',
-      subtitle: 'Sencillo y sin fricción',
-      description: 'Usa el Gasto Rápido y selecciona tu cuenta (Efectivo, Tarjeta, Banco, Broker) tocando los botones visuales. ¡Sin escribir nada!',
-      icon: 'Zap',
-      color: '#ffaa00',
-    },
-    {
-      title: 'Privacidad y Seguridad 🔒👁️',
-      subtitle: 'Tus datos siempre a salvo',
-      description: 'Bloqueo automático tras 30 segundos en segundo plano. Activa el Modo Incógnito para ocultar tus montos en público con un toque.',
-      icon: 'Shield',
-      color: '#ef4444',
-    },
-  ];
+  // Recalculate spotlight coordinates based on selector
+  const updateCoords = () => {
+    const el = document.querySelector(currentStep.targetSelector);
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setCoords({
+        top: rect.top + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+        height: rect.height
+      });
+    } else {
+      setCoords(null);
+    }
+  };
+
+  // Change tab when step changes and wait for render
+  useEffect(() => {
+    setActiveTab(currentStep.tab);
+    
+    // Delay coordination fetch slightly so the view has time to swap and mount
+    const timer = setTimeout(() => {
+      updateCoords();
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [stepIdx]);
+
+  // Recalculate on window resize
+  useEffect(() => {
+    window.addEventListener('resize', updateCoords);
+    return () => window.removeEventListener('resize', updateCoords);
+  }, [stepIdx]);
 
   const handleNext = () => {
-    if (currentSlide < slides.length - 1) {
-      setCurrentSlide(currentSlide + 1);
+    if (stepIdx < TOUR_STEPS.length - 1) {
+      setStepIdx(stepIdx + 1);
     } else {
       onClose();
     }
   };
 
   const handlePrev = () => {
-    if (currentSlide > 0) {
-      setCurrentSlide(currentSlide - 1);
+    if (stepIdx > 0) {
+      setStepIdx(stepIdx - 1);
     }
   };
 
-  const slide = slides[currentSlide];
-
   return (
-    <div className="modal-overlay open" style={{ zIndex: 3000 }}>
-      <div 
-        className="modal-sheet" 
-        style={{ 
-          maxWidth: '460px', 
-          width: '90%', 
-          padding: '24px', 
-          textAlign: 'center',
-          borderRadius: '24px',
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', zIndex: 99999, pointerEvents: 'none' }}>
+      {/* Dimmed backdrop overlay */}
+      <div style={{ 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        width: '100%', 
+        height: '100%', 
+        backgroundColor: 'rgba(0, 0, 0, 0.4)', 
+        pointerEvents: 'auto',
+        zIndex: 99998
+      }} />
+
+      {/* Spotlight cutout border */}
+      {coords && (
+        <div style={{
+          position: 'absolute',
+          top: coords.top - 4,
+          left: coords.left - 4,
+          width: coords.width + 8,
+          height: coords.height + 8,
+          borderRadius: coords.width > 70 ? '20px' : '50%',
+          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.55), 0 0 0 3px var(--color-primary)',
+          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          zIndex: 99999,
+          pointerEvents: 'none'
+        }} />
+      )}
+
+      {/* Tooltip bubble popover */}
+      {coords && (
+        <div style={{
+          position: 'absolute',
+          top: currentStep.placement === 'top' ? coords.top - 12 : coords.top + coords.height + 12,
+          left: Math.max(16, Math.min(window.innerWidth - 300, coords.left + coords.width / 2 - 140)),
+          width: '280px',
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '16px',
+          padding: '16px',
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          gap: '20px',
-          margin: 'auto'
-        }}
-      >
-        {/* Progress dots at the top */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-          {slides.map((_, idx) => (
-            <div 
-              key={idx}
-              style={{
-                width: currentSlide === idx ? '24px' : '8px',
-                height: '8px',
-                borderRadius: '4px',
-                backgroundColor: currentSlide === idx ? 'var(--color-primary)' : 'var(--text-muted)',
-                transition: 'all 0.3s ease'
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Big Animated Icon */}
-        <div 
-          style={{
-            width: '84px',
-            height: '84px',
-            borderRadius: '24px',
-            backgroundColor: `${slide.color}15`,
-            color: slide.color,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '10px',
-            boxShadow: `0 8px 16px -4px ${slide.color}20`
-          }}
-        >
-          <DynamicIcon name={slide.icon} size={40} color={slide.color} />
-        </div>
-
-        {/* Typography */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-primary)', margin: 0 }}>
-            {slide.title}
-          </h2>
-          <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            {slide.subtitle}
-          </span>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5', margin: '8px 0 0 0' }}>
-            {slide.description}
-          </p>
-        </div>
-
-        {/* Buttons */}
-        <div style={{ display: 'flex', gap: '12px', width: '100%', marginTop: '10px' }}>
-          {currentSlide > 0 ? (
+          gap: '10px',
+          zIndex: 100000,
+          pointerEvents: 'auto',
+          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          animation: 'scaleIn 0.2s ease-out'
+        }}>
+          {/* Header step info */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--color-primary)', textTransform: 'uppercase' }}>
+              Paso {stepIdx + 1} de {TOUR_STEPS.length}
+            </span>
             <button 
               type="button" 
-              className="btn btn-secondary" 
-              onClick={handlePrev}
-              style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600' }}
+              onClick={onClose} 
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              title="Omitir"
             >
-              Atrás
+              <DynamicIcon name="X" size={14} color="var(--text-muted)" />
             </button>
-          ) : (
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <h4 style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-primary)', margin: 0 }}>
+              {currentStep.title}
+            </h4>
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4', margin: 0 }}>
+              {currentStep.description}
+            </p>
+          </div>
+
+          {/* Action buttons inside tooltip */}
+          <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+            {stepIdx > 0 && (
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={handlePrev}
+                style={{ padding: '6px 12px', fontSize: '11px', flex: 1, height: '28px', borderRadius: '8px' }}
+              >
+                Atrás
+              </button>
+            )}
             <button 
               type="button" 
-              className="btn btn-ghost" 
-              onClick={onClose}
-              style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)' }}
+              className="btn btn-primary" 
+              onClick={handleNext}
+              style={{ padding: '6px 12px', fontSize: '11px', flex: 2, height: '28px', borderRadius: '8px' }}
             >
-              Omitir
+              {stepIdx === TOUR_STEPS.length - 1 ? 'Terminar' : 'Siguiente'}
             </button>
-          )}
-
-          <button 
-            type="button" 
-            className="btn btn-primary" 
-            onClick={handleNext}
-            style={{ flex: 2, padding: '12px', fontSize: '13px', fontWeight: '600' }}
-          >
-            {currentSlide === slides.length - 1 ? '¡Comenzar ya!' : 'Siguiente'}
-          </button>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* CSS Injection for scaleIn animation */}
+      <style>{`
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
     </div>
   );
 };
