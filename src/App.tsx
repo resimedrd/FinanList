@@ -43,7 +43,7 @@ const MainLayout: React.FC = () => {
     }
   }, [profile.theme, profile.accentColor]);
 
-  // Lock app after 30 seconds of inactivity in background (Multi-event listener with local fallback)
+  // Lock app after 30 seconds of inactivity in background (Page Visibility API and lifecycle events)
   React.useEffect(() => {
     const recordLeave = () => {
       const activeProf = profile || LocalRepository.getProfile();
@@ -77,16 +77,12 @@ const MainLayout: React.FC = () => {
       }
     };
 
-    // Listen to multiple exit/enter browser cues to guarantee locking on iOS/Safari/Chrome
-    window.addEventListener('blur', recordLeave);
-    window.addEventListener('focus', checkReturn);
+    // Listen to visibility and page lifecycle events to guarantee locking on iOS/Safari/Chrome
     window.addEventListener('pagehide', recordLeave);
     window.addEventListener('pageshow', checkReturn);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      window.removeEventListener('blur', recordLeave);
-      window.removeEventListener('focus', checkReturn);
       window.removeEventListener('pagehide', recordLeave);
       window.removeEventListener('pageshow', checkReturn);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
