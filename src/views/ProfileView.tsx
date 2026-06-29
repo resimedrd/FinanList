@@ -30,7 +30,7 @@ export const ProfileView: React.FC = () => {
     addRecurring,
     updateRecurring,
     deleteRecurring,
-    setAuthenticated
+    signOut
   } = useApp();
 
   const [name, setName] = useState<string>(profile.name);
@@ -471,7 +471,11 @@ export const ProfileView: React.FC = () => {
       {/* Logout button */}
       <button 
         className="btn btn-secondary" 
-        onClick={() => setAuthenticated(false)} 
+        onClick={() => {
+          if (confirm('¿Deseas cerrar tu sesión en la nube? Se borrarán los datos locales de caché.')) {
+            signOut();
+          }
+        }} 
         style={{ 
           marginBottom: '20px', 
           backgroundColor: 'var(--color-danger-light)', 

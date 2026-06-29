@@ -19,6 +19,50 @@ const MainLayout: React.FC = () => {
   const [editTx, setEditTx] = useState<Transaction | undefined>(undefined);
   const [defaultType, setDefaultType] = useState<'income' | 'expense'>('expense');
 
+  // Synchronize browser history with activeTab and modals
+  React.useEffect(() => {
+    if (!window.history.state) {
+      window.history.replaceState({ tab: activeTab }, '', '');
+    } else if (window.history.state.tab !== activeTab) {
+      window.history.pushState({ tab: activeTab }, '', '');
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      if (modalOpen) {
+        setModalOpen(false);
+        setEditTx(undefined);
+      }
+
+      if (event.state && event.state.tab) {
+        setActiveTab(event.state.tab);
+      } else {
+        setActiveTab('home');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [activeTab, modalOpen]);
+
+  React.useEffect(() => {
+    if (modalOpen) {
+      // Only push if not already at modal state
+      if (window.history.state?.modal !== 'transaction') {
+        window.history.pushState({ modal: 'transaction', tab: activeTab }, '', '');
+      }
+    }
+  }, [modalOpen]);
+
+  const handleCloseModal = () => {
+    setModalOpen(false);
+    setEditTx(undefined);
+    if (window.history.state?.modal === 'transaction') {
+      window.history.back();
+    }
+  };
+
   // Open modal helper
   const handleOpenTransactionModal = (tx?: Transaction, type?: 'income' | 'expense') => {
     setEditTx(tx);
@@ -67,10 +111,7 @@ const MainLayout: React.FC = () => {
       {/* Global Transaction Bottom Sheet Modal */}
       <TransactionModal
         isOpen={modalOpen}
-        onClose={() => {
-          setModalOpen(false);
-          setEditTx(undefined);
-        }}
+        onClose={handleCloseModal}
         editTransaction={editTx}
         defaultType={defaultType}
       />

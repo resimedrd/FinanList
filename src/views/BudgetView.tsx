@@ -36,6 +36,66 @@ export const BudgetView: React.FC = () => {
   const [showAddGoal, setShowAddGoal] = useState<boolean>(false);
   const [showAddDebt, setShowAddDebt] = useState<boolean>(false);
 
+  React.useEffect(() => {
+    const handlePopState = () => {
+      if (showAddBudget) {
+        setBAmount('');
+        setBContingencyAmount('');
+        setBName('');
+        setBCategoryId('all');
+        setBudgetPeriod('monthly');
+        setEditingBudget(null);
+        setShowAddBudget(false);
+      }
+      if (showAddGoal) {
+        setEditingGoal(null);
+        setGName('');
+        setGTarget('');
+        setGSaved('0');
+        setGIcon('Target');
+        setGColor('#6366f1');
+        setGDate('');
+        setShowAddGoal(false);
+      }
+      if (showAddDebt) {
+        setDebtPerson('');
+        setDebtAmount('');
+        setDebtDueDate('');
+        setDebtNotes('');
+        setShowAddDebt(false);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [showAddBudget, showAddGoal, showAddDebt]);
+
+  React.useEffect(() => {
+    if (showAddBudget) {
+      if (window.history.state?.modal !== 'budget') {
+        window.history.pushState({ modal: 'budget', tab: 'budget' }, '', '');
+      }
+    }
+  }, [showAddBudget]);
+
+  React.useEffect(() => {
+    if (showAddGoal) {
+      if (window.history.state?.modal !== 'goal') {
+        window.history.pushState({ modal: 'goal', tab: 'budget' }, '', '');
+      }
+    }
+  }, [showAddGoal]);
+
+  React.useEffect(() => {
+    if (showAddDebt) {
+      if (window.history.state?.modal !== 'debt') {
+        window.history.pushState({ modal: 'debt', tab: 'budget' }, '', '');
+      }
+    }
+  }, [showAddDebt]);
+
   // Inline Category Creation State
   const [showInlineAddCategory, setShowInlineAddCategory] = useState<boolean>(false);
   const [inlineCatName, setInlineCatName] = useState<string>('');
@@ -187,6 +247,9 @@ export const BudgetView: React.FC = () => {
     setBudgetPeriod('monthly');
     setEditingBudget(null);
     setShowAddBudget(false);
+    if (window.history.state?.modal === 'budget') {
+      window.history.back();
+    }
   };
 
   const handleCreateInlineCategory = () => {
@@ -270,6 +333,9 @@ export const BudgetView: React.FC = () => {
     setGColor('#6366f1');
     setGDate('');
     setShowAddGoal(false);
+    if (window.history.state?.modal === 'goal') {
+      window.history.back();
+    }
   };
 
   const handleCreateGoal = () => {
@@ -343,6 +409,17 @@ export const BudgetView: React.FC = () => {
     }
   };
 
+  const handleCloseDebtModal = () => {
+    setDebtPerson('');
+    setDebtAmount('');
+    setDebtDueDate('');
+    setDebtNotes('');
+    setShowAddDebt(false);
+    if (window.history.state?.modal === 'debt') {
+      window.history.back();
+    }
+  };
+
   const handleCreateDebt = () => {
     const total = parseFloat(debtAmount);
     if (isNaN(total) || total <= 0) {
@@ -383,12 +460,7 @@ export const BudgetView: React.FC = () => {
       icon: debtType === 'borrowed' ? 'Coins' : 'TrendingDown'
     });
 
-    // Reset Form
-    setDebtPerson('');
-    setDebtAmount('');
-    setDebtDueDate('');
-    setDebtNotes('');
-    setShowAddDebt(false);
+    handleCloseDebtModal();
   };
 
   const handleAbonarDebt = (debt: Debt) => {
@@ -1003,11 +1075,11 @@ export const BudgetView: React.FC = () => {
 
       {/* --- ADD DEBT MODAL SHEET --- */}
       {showAddDebt && (
-        <div className="modal-overlay open" onClick={() => setShowAddDebt(false)}>
+        <div className="modal-overlay open" onClick={handleCloseDebtModal}>
           <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Registrar Deuda / Préstamo</h2>
-              <button className="btn-ghost" onClick={() => setShowAddDebt(false)}>
+              <button className="btn-ghost" onClick={handleCloseDebtModal}>
                 <DynamicIcon name="X" size={24} color="var(--text-secondary)" />
               </button>
             </div>

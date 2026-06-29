@@ -1,21 +1,28 @@
 import React, { useState } from 'react';
+import { useApp } from '../context/AppContext';
 import { DynamicIcon } from '../components/DynamicIcon';
-import { UserProfile } from '../models/types';
-import { LocalRepository } from '../repositories/LocalRepository';
 
 export const OnboardingView: React.FC = () => {
+  const { signUp, signIn, updateProfile } = useApp();
+  const [isLoginMode, setIsLoginMode] = useState<boolean>(false);
   const [step, setStep] = useState<number>(1);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   
   // Registration States
   const [name, setName] = useState<string>('');
   const [username, setUsername] = useState<string>('');
   const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [currency, setCurrency] = useState<string>('RD$');
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
   const [accentColor, setAccentColor] = useState<string>('#8b5cf6'); // Default to moradito bonito
   const [pin, setPin] = useState<string>('');
   const [confirmPin, setConfirmPin] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
+
+  // Login States
+  const [loginEmail, setLoginEmail] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
 
   const handleNextStep = () => {
     if (step === 1) {
@@ -38,95 +45,92 @@ export const OnboardingView: React.FC = () => {
     }
   };
 
-  const handleFinishRegistration = (useDemoData: boolean = false) => {
-    if (!useDemoData && pin.length > 0) {
-      if (pin.length !== 4) {
-        setErrorMsg('El PIN debe tener exactamente 4 dígitos.');
-        return;
-      }
-      if (pin !== confirmPin) {
-        setErrorMsg('Los códigos PIN no coinciden.');
-        return;
-      }
-    }
-
-    if (useDemoData) {
-      // Clear localStorage first to make sure init runs clean
-      localStorage.clear();
-      LocalRepository.seedDemoData(); // This seeds everything
-      window.location.reload();
+  const handleFinishRegistration = async () => {
+    if (!password || password.length < 6) {
+      setErrorMsg('La contraseña de la nube debe tener al menos 6 caracteres.');
       return;
     }
 
-    // Register empty user from scratch
-    localStorage.clear();
-    
-    const newProfile: UserProfile = {
-      name: name.trim(),
-      username: username.trim().toLowerCase(),
-      email: email.trim().toLowerCase(),
-      avatar: '',
-      currency,
-      language: 'es',
-      theme,
-      accentColor,
-      pinCode: pin || undefined,
-      biometricsEnabled: false
-    };
+    if (pin.length > 0) {
+      if (pin.length !== 4) {
+        setErrorMsg('El PIN de bloqueo rápido debe tener exactamente 4 dígitos.');
+        return;
+      }
+      if (pin !== confirmPin) {
+        setErrorMsg('Los códigos PIN de confirmación no coinciden.');
+        return;
+      }
+    }
 
-    // Save profile and setup empty lists
-    localStorage.setItem('finanlist_profile', JSON.stringify(newProfile));
-    localStorage.setItem('finanlist_transactions', JSON.stringify([]));
-    localStorage.setItem('finanlist_categories', JSON.stringify(LocalRepository.getCategories())); // keep default categories
-    localStorage.setItem('finanlist_budgets', JSON.stringify([]));
-    localStorage.setItem('finanlist_goals', JSON.stringify([]));
-    localStorage.setItem('finanlist_onboarded', 'true');
+    setIsLoading(true);
+    setErrorMsg('');
 
-    // Reload page to re-initialize application context state from storage
-    window.location.reload();
+    try {
+      // 1. Create account on Supabase
+      await signUp(email.trim(), password, name.trim(), username.trim());
+      
+      // 2. Set profile custom preferences
+      await updateProfile({
+        name: name.trim(),
+        username: username.trim().toLowerCase(),
+        email: email.trim().toLowerCase(),
+        avatar: '',
+        currency,
+        language: 'es',
+        theme,
+        accentColor,
+        pinCode: pin || undefined,
+        biometricsEnabled: false
+      });
+
+      // 3. Reload page to initialize home
+      window.location.reload();
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || 'Error al crear la cuenta. Verifica que los datos sean correctos.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!loginEmail.trim() || !loginPassword) {
+      setErrorMsg('Por favor, completa todos los campos.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg('');
+
+    try {
+      await signIn(loginEmail.trim(), loginPassword);
+      window.location.reload();
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || 'Credenciales incorrectas o problema de conexión.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div style={styles.container}>
-      {/* Top Banner logo */}
       <div style={styles.logoHeader}>
         <div style={styles.logoCircle}>
-          <DynamicIcon name="Coins" size={28} color="var(--color-primary)" />
+          <DynamicIcon name="PiggyBank" size={28} color="var(--color-primary)" />
         </div>
-        <h1 style={styles.logoText}>Finanlist</h1>
-        <p style={styles.logoTagline}>Tu gestor financiero personal premium</p>
+        <h1 style={styles.logoText}>FinanList</h1>
+        <span style={styles.logoTagline}>Tu asistente financiero en la nube</span>
       </div>
 
-      <div className="card animate-fade-in" style={styles.formCard}>
-        {/* STEP 1: Name and Currency */}
-        {step === 1 && (
+      <div className="card" style={styles.formCard}>
+        {isLoginMode ? (
+          /* --- LOGIN FORM --- */
           <div style={styles.stepContent}>
             <div style={styles.stepHeader}>
-              <span style={styles.stepIndicator}>Paso 1 de 3</span>
-              <h3>Comencemos con lo básico</h3>
-              <p>¿Cómo deberíamos llamarte y qué moneda utilizas?</p>
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Tu Nombre</label>
-              <input
-                type="text"
-                placeholder="Ej. Frank Espinal"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="input-field"
-              />
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Nombre de Usuario (Para ingresar)</label>
-              <input
-                type="text"
-                placeholder="Ej. frankespinal"
-                value={username}
-                onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
-                className="input-field"
-              />
+              <span style={styles.stepIndicator}>Iniciar Sesión</span>
+              <h3>Bienvenido de nuevo</h3>
+              <p>Introduce tus credenciales para sincronizar tu cuenta.</p>
             </div>
 
             <div className="input-group">
@@ -134,151 +138,259 @@ export const OnboardingView: React.FC = () => {
               <input
                 type="email"
                 placeholder="Ej. frank@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
                 className="input-field"
               />
             </div>
 
             <div className="input-group">
-              <label className="input-label">Moneda Principal</label>
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
+              <label className="input-label">Contraseña</label>
+              <input
+                type="password"
+                placeholder="Tu contraseña de GitHub/Supabase"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
                 className="input-field"
-              >
-                <option value="RD$">Peso Dominicano (RD$)</option>
-                <option value="$">Dólar ($)</option>
-                <option value="€">Euro (€)</option>
-                <option value="COL$">Peso Colombiano (COL$)</option>
-                <option value="MXN$">Peso Mexicano (MXN$)</option>
-                <option value="S/">Sol Peruano (S/)</option>
-              </select>
+              />
             </div>
 
             {errorMsg && <p style={styles.errorText}>{errorMsg}</p>}
 
-            <button className="btn btn-primary" onClick={handleNextStep}>
-              Siguiente
+            <button 
+              className="btn btn-primary" 
+              onClick={handleLogin}
+              disabled={isLoading}
+            >
+              {isLoading ? 'Iniciando Sesión...' : 'Entrar'}
+            </button>
+
+            <button 
+              className="btn btn-ghost" 
+              onClick={() => {
+                setIsLoginMode(false);
+                setErrorMsg('');
+                setStep(1);
+              }}
+              style={{ fontSize: '12px', marginTop: '4px' }}
+            >
+              No tengo cuenta, Registrarme
             </button>
           </div>
-        )}
+        ) : (
+          /* --- SIGNUP FLOW --- */
+          <>
+            {/* STEP 1: Basic Info */}
+            {step === 1 && (
+              <div style={styles.stepContent}>
+                <div style={styles.stepHeader}>
+                  <span style={styles.stepIndicator}>Paso 1 de 3</span>
+                  <h3>Comencemos con lo básico</h3>
+                  <p>¿Cómo deberíamos llamarte y cuál es tu correo?</p>
+                </div>
 
-        {/* STEP 2: Theme and Accent Color */}
-        {step === 2 && (
-          <div style={styles.stepContent}>
-            <div style={styles.stepHeader}>
-              <span style={styles.stepIndicator}>Paso 2 de 3</span>
-              <h3>Personaliza tu estilo</h3>
-              <p>Elige tu tema visual y tu color de acento favorito.</p>
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Tema Visual</label>
-              <div style={styles.segmentControl}>
-                {['light', 'dark', 'system'].map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setTheme(t as any)}
-                    style={{
-                      ...styles.segmentBtn,
-                      backgroundColor: theme === t ? 'var(--bg-phone)' : 'transparent',
-                      color: theme === t ? 'var(--color-primary)' : 'var(--text-secondary)',
-                      fontWeight: theme === t ? '700' : '500',
-                    }}
-                  >
-                    {t === 'light' ? 'Claro' : t === 'dark' ? 'Oscuro' : 'Sistema'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Color de Énfasis</label>
-              <div style={styles.colorsGrid}>
-                {[
-                  { name: 'Índigo', value: '#6366f1' },
-                  { name: 'Esmeralda', value: '#10b981' },
-                  { name: 'Ámbar', value: '#f59e0b' },
-                  { name: 'Carmesí', value: '#ef4444' },
-                  { name: 'Turquesa', value: '#06b6d4' },
-                  { name: 'Rosa Violeta', value: '#ec4899' },
-                ].map(color => (
-                  <button
-                    key={color.value}
-                    onClick={() => setAccentColor(color.value)}
-                    style={{
-                      ...styles.colorBtn,
-                      backgroundColor: color.value,
-                      outline: accentColor === color.value ? `3px solid var(--text-primary)` : 'none'
-                    }}
+                <div className="input-group">
+                  <label className="input-label">Tu Nombre</label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Frank Espinal"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="input-field"
                   />
-                ))}
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label">Nombre de Usuario (Único)</label>
+                  <input
+                    type="text"
+                    placeholder="Ej. frankespinal"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
+                    className="input-field"
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label">Correo Electrónico</label>
+                  <input
+                    type="email"
+                    placeholder="Ej. frank@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="input-field"
+                  />
+                </div>
+
+                {errorMsg && <p style={styles.errorText}>{errorMsg}</p>}
+
+                <button className="btn btn-primary" onClick={handleNextStep}>
+                  Siguiente
+                </button>
+
+                <button 
+                  className="btn btn-ghost" 
+                  onClick={() => {
+                    setIsLoginMode(true);
+                    setErrorMsg('');
+                  }}
+                  style={{ fontSize: '12px', marginTop: '4px' }}
+                >
+                  Ya tengo cuenta, Iniciar Sesión
+                </button>
               </div>
-            </div>
+            )}
 
-            <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
-              <button className="btn btn-secondary" onClick={() => setStep(1)} style={{ flex: 1 }}>
-                Atrás
-              </button>
-              <button className="btn btn-primary" onClick={handleNextStep} style={{ flex: 1 }}>
-                Siguiente
-              </button>
-            </div>
-          </div>
-        )}
+            {/* STEP 2: Theme and Preferences */}
+            {step === 2 && (
+              <div style={styles.stepContent}>
+                <div style={styles.stepHeader}>
+                  <span style={styles.stepIndicator}>Paso 2 de 3</span>
+                  <h3>Personaliza tu estilo</h3>
+                  <p>Elige tu moneda y tu color de acento favorito.</p>
+                </div>
 
-        {/* STEP 3: Security PIN Setup */}
-        {step === 3 && (
-          <div style={styles.stepContent}>
-            <div style={styles.stepHeader}>
-              <span style={styles.stepIndicator}>Paso 3 de 3</span>
-              <h3>Seguridad de Acceso</h3>
-              <p>Introduce un PIN de 4 dígitos para proteger tu información. Si no deseas PIN, puedes dejarlo en blanco.</p>
-            </div>
+                <div className="input-group">
+                  <label className="input-label">Moneda Principal</label>
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="input-field"
+                  >
+                    <option value="RD$">Peso Dominicano (RD$)</option>
+                    <option value="$">Dólar ($)</option>
+                    <option value="€">Euro (€)</option>
+                    <option value="COL$">Peso Colombiano (COL$)</option>
+                    <option value="MXN$">Peso Mexicano (MXN$)</option>
+                    <option value="S/">Sol Peruano (S/)</option>
+                  </select>
+                </div>
 
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <div className="input-group" style={{ flex: 1 }}>
-                <label className="input-label">PIN (4 dígitos)</label>
-                <input
-                  type="password"
-                  maxLength={4}
-                  pattern="\d*"
-                  inputMode="numeric"
-                  placeholder="PIN"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                  className="input-field"
-                  style={{ textAlign: 'center', letterSpacing: '8px', fontSize: '18px' }}
-                />
+                <div className="input-group">
+                  <label className="input-label">Tema Visual</label>
+                  <div style={styles.segmentControl}>
+                    {['light', 'dark', 'system'].map(t => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTheme(t as any)}
+                        style={{
+                          ...styles.segmentBtn,
+                          backgroundColor: theme === t ? 'var(--bg-phone)' : 'transparent',
+                          color: theme === t ? 'var(--color-primary)' : 'var(--text-secondary)',
+                          fontWeight: theme === t ? '700' : '500',
+                        }}
+                      >
+                        {t === 'light' ? 'Claro' : t === 'dark' ? 'Oscuro' : 'Sistema'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label">Color de Énfasis</label>
+                  <div style={styles.colorsGrid}>
+                    {[
+                      { name: 'Morado', value: '#8b5cf6' },
+                      { name: 'Índigo', value: '#6366f1' },
+                      { name: 'Esmeralda', value: '#10b981' },
+                      { name: 'Ámbar', value: '#f59e0b' },
+                      { name: 'Carmesí', value: '#ef4444' },
+                      { name: 'Turquesa', value: '#06b6d4' },
+                    ].map(color => (
+                      <button
+                        key={color.value}
+                        type="button"
+                        onClick={() => setAccentColor(color.value)}
+                        style={{
+                          ...styles.colorBtn,
+                          backgroundColor: color.value,
+                          outline: accentColor === color.value ? `3px solid var(--text-primary)` : 'none'
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+                  <button className="btn btn-secondary" onClick={() => setStep(1)} style={{ flex: 1 }}>
+                    Atrás
+                  </button>
+                  <button className="btn btn-primary" onClick={handleNextStep} style={{ flex: 1 }}>
+                    Siguiente
+                  </button>
+                </div>
               </div>
-              <div className="input-group" style={{ flex: 1 }}>
-                <label className="input-label">Confirmar PIN</label>
-                <input
-                  type="password"
-                  maxLength={4}
-                  pattern="\d*"
-                  inputMode="numeric"
-                  placeholder="PIN"
-                  value={confirmPin}
-                  onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
-                  className="input-field"
-                  style={{ textAlign: 'center', letterSpacing: '8px', fontSize: '18px' }}
-                />
+            )}
+
+            {/* STEP 3: Cloud Password and Quick PIN */}
+            {step === 3 && (
+              <div style={styles.stepContent}>
+                <div style={styles.stepHeader}>
+                  <span style={styles.stepIndicator}>Paso 3 de 3</span>
+                  <h3>Contraseñas y Acceso</h3>
+                  <p>Crea tu clave en la nube y configura un PIN de desbloqueo rápido (opcional).</p>
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label">Contraseña (Mín. 6 caracteres)</label>
+                  <input
+                    type="password"
+                    placeholder="Contraseña para iniciar sesión"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="input-field"
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div className="input-group" style={{ flex: 1 }}>
+                    <label className="input-label">PIN Rápido (4 dígitos)</label>
+                    <input
+                      type="password"
+                      maxLength={4}
+                      pattern="\d*"
+                      inputMode="numeric"
+                      placeholder="PIN"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                      className="input-field"
+                      style={{ textAlign: 'center', letterSpacing: '8px', fontSize: '18px' }}
+                    />
+                  </div>
+                  <div className="input-group" style={{ flex: 1 }}>
+                    <label className="input-label">Confirmar PIN</label>
+                    <input
+                      type="password"
+                      maxLength={4}
+                      pattern="\d*"
+                      inputMode="numeric"
+                      placeholder="PIN"
+                      value={confirmPin}
+                      onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                      className="input-field"
+                      style={{ textAlign: 'center', letterSpacing: '8px', fontSize: '18px' }}
+                    />
+                  </div>
+                </div>
+
+                {errorMsg && <p style={styles.errorText}>{errorMsg}</p>}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={handleFinishRegistration}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Registrando...' : (pin ? 'Crear Cuenta y Finalizar' : 'Finalizar sin PIN')}
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => setStep(2)}>
+                    Atrás
+                  </button>
+                </div>
               </div>
-            </div>
-
-            {errorMsg && <p style={styles.errorText}>{errorMsg}</p>}
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
-              <button className="btn btn-primary" onClick={() => handleFinishRegistration(false)}>
-                {pin ? 'Guardar y Finalizar' : 'Finalizar sin PIN'}
-              </button>
-              <button className="btn btn-secondary" onClick={() => setStep(2)}>
-                Atrás
-              </button>
-            </div>
-          </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -291,7 +403,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     padding: '40px 24px',
     backgroundColor: 'var(--bg-phone)',
@@ -383,22 +495,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     cursor: 'pointer',
   },
-  demoShortcut: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '20px',
-  },
-  demoText: {
-    fontSize: '11px',
-    color: 'var(--text-secondary)',
-  },
-  demoBtn: {
-    padding: '8px 16px',
-    fontSize: '11px',
-    width: 'auto',
-    borderRadius: '20px',
-  },
 };
+
 export default OnboardingView;
