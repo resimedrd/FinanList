@@ -35,15 +35,15 @@ const DEFAULT_CATEGORIES: Category[] = [
 ];
 
 const DEFAULT_PROFILE: UserProfile = {
-  name: 'Frank Espinal',
-  username: 'frankespinal',
-  email: 'frank@example.com',
+  name: 'Usuario Demo',
+  username: 'usuario_demo',
+  email: 'demo@example.com',
   avatar: '',
   currency: 'RD$',
   language: 'es',
   theme: 'dark',
   accentColor: '#8b5cf6', // Purple / Morado Bonito
-  pinCode: '1234', // Default PIN for demonstration
+  pinCode: '0000', // Generic default PIN
   biometricsEnabled: false,
 };
 

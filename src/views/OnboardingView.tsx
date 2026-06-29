@@ -281,19 +281,6 @@ export const OnboardingView: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* Demo Seed Shortcut */}
-      <div style={styles.demoShortcut}>
-        <p style={styles.demoText}>¿Deseas probar la app antes?</p>
-        <button
-          className="btn btn-secondary"
-          onClick={() => handleFinishRegistration(true)}
-          style={styles.demoBtn}
-        >
-          <DynamicIcon name="Sparkles" size={14} color="var(--color-primary)" />
-          <span>Comenzar con Datos Demo</span>
-        </button>
-      </div>
     </div>
   );
 };
