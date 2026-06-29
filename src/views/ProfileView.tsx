@@ -472,7 +472,7 @@ export const ProfileView: React.FC = () => {
       <button 
         className="btn btn-secondary" 
         onClick={() => {
-          if (confirm('¿Deseas cerrar tu sesión en la nube? Se borrarán los datos locales de caché.')) {
+          if (confirm('¿Deseas cerrar tu sesión?')) {
             signOut();
           }
         }} 
@@ -489,7 +489,7 @@ export const ProfileView: React.FC = () => {
         }}
       >
         <DynamicIcon name="LogOut" size={16} />
-        <span>Cerrar Sesión (Bloquear App)</span>
+        <span>Cerrar Sesión</span>
       </button>
 
       {/* CATEGORIES MANAGEMENT MODAL */}

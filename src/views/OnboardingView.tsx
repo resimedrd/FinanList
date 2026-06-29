@@ -137,7 +137,7 @@ export const OnboardingView: React.FC = () => {
               <label className="input-label">Correo Electrónico</label>
               <input
                 type="email"
-                placeholder="Ej. frank@example.com"
+                placeholder="Ej. usuario@ejemplo.com"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
                 className="input-field"
@@ -148,7 +148,7 @@ export const OnboardingView: React.FC = () => {
               <label className="input-label">Contraseña</label>
               <input
                 type="password"
-                placeholder="Tu contraseña de GitHub/Supabase"
+                placeholder="Tu contraseña de inicio de sesión"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
                 className="input-field"
@@ -193,7 +193,7 @@ export const OnboardingView: React.FC = () => {
                   <label className="input-label">Tu Nombre</label>
                   <input
                     type="text"
-                    placeholder="Ej. Frank Espinal"
+                    placeholder="Ej. Juan Pérez"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="input-field"
@@ -204,7 +204,7 @@ export const OnboardingView: React.FC = () => {
                   <label className="input-label">Nombre de Usuario (Único)</label>
                   <input
                     type="text"
-                    placeholder="Ej. frankespinal"
+                    placeholder="Ej. juanperez"
                     value={username}
                     onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
                     className="input-field"
@@ -215,7 +215,7 @@ export const OnboardingView: React.FC = () => {
                   <label className="input-label">Correo Electrónico</label>
                   <input
                     type="email"
-                    placeholder="Ej. frank@example.com"
+                    placeholder="Ej. juan@ejemplo.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="input-field"
