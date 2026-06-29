@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
+import { LocalRepository } from './repositories/LocalRepository';
 import { LockScreen } from './views/LockScreen';
 import { HomeView } from './views/HomeView';
 import { HistoryView } from './views/HistoryView';
@@ -42,31 +43,55 @@ const MainLayout: React.FC = () => {
     }
   }, [profile.theme, profile.accentColor]);
 
-  // Lock app after 30 seconds of inactivity in background (Persisted in localStorage to avoid re-render resets)
+  // Lock app after 30 seconds of inactivity in background (Multi-event listener with local fallback)
   React.useEffect(() => {
-    if (!profile.pinCode) return; // Only lock if a PIN is configured
+    const recordLeave = () => {
+      const activeProf = profile || LocalRepository.getProfile();
+      if (!activeProf || !activeProf.pinCode) return;
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
+      if (!localStorage.getItem('finanlist_leave_time')) {
         localStorage.setItem('finanlist_leave_time', Date.now().toString());
-      } else if (document.visibilityState === 'visible') {
-        const leaveStr = localStorage.getItem('finanlist_leave_time');
-        if (leaveStr) {
-          const leaveTime = parseInt(leaveStr, 10);
-          const diffSeconds = (Date.now() - leaveTime) / 1000;
-          if (diffSeconds >= 30) {
-            setAuthenticated(false);
-          }
-        }
-        localStorage.removeItem('finanlist_leave_time'); // Clear
       }
     };
 
+    const checkReturn = () => {
+      const activeProf = profile || LocalRepository.getProfile();
+      if (!activeProf || !activeProf.pinCode) return;
+
+      const leaveStr = localStorage.getItem('finanlist_leave_time');
+      if (leaveStr) {
+        const leaveTime = parseInt(leaveStr, 10);
+        const diffSeconds = (Date.now() - leaveTime) / 1000;
+        if (diffSeconds >= 30) {
+          setAuthenticated(false);
+        }
+      }
+      localStorage.removeItem('finanlist_leave_time'); // Clear after check
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        recordLeave();
+      } else if (document.visibilityState === 'visible') {
+        checkReturn();
+      }
+    };
+
+    // Listen to multiple exit/enter browser cues to guarantee locking on iOS/Safari/Chrome
+    window.addEventListener('blur', recordLeave);
+    window.addEventListener('focus', checkReturn);
+    window.addEventListener('pagehide', recordLeave);
+    window.addEventListener('pageshow', checkReturn);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      window.removeEventListener('blur', recordLeave);
+      window.removeEventListener('focus', checkReturn);
+      window.removeEventListener('pagehide', recordLeave);
+      window.removeEventListener('pageshow', checkReturn);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [profile.pinCode, setAuthenticated]);
+  }, [profile, setAuthenticated]);
 
   // Welcome Tour state
   const [showWelcomeTour, setShowWelcomeTour] = useState<boolean>(false);
