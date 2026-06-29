@@ -96,6 +96,17 @@ export const BudgetView: React.FC = () => {
     }
   }, [showAddDebt]);
 
+  // Account Picker state
+  const [showAccountPicker, setShowAccountPicker] = useState<boolean>(false);
+  const [accountPickerTitle, setAccountPickerTitle] = useState<string>('');
+  const [accountPickerCallback, setAccountPickerCallback] = useState<((acc: string) => void) | null>(null);
+
+  const promptAccountSelection = (title: string, callback: (acc: string) => void) => {
+    setAccountPickerTitle(title);
+    setAccountPickerCallback(() => callback);
+    setShowAccountPicker(true);
+  };
+
   // Inline Category Creation State
   const [showInlineAddCategory, setShowInlineAddCategory] = useState<boolean>(false);
   const [inlineCatName, setInlineCatName] = useState<string>('');
@@ -288,26 +299,24 @@ export const BudgetView: React.FC = () => {
       }
     }
 
-    const accountOption = prompt(`¿Con qué cuenta pagaste?\nEscribe: Efectivo, Tarjeta o Banco`, 'Efectivo');
-    if (accountOption === null) return;
-    const account = accountOption.trim() || 'Efectivo';
+    promptAccountSelection(`¿Con qué cuenta pagaste "${budget.name}"?`, (account) => {
+      const now = new Date();
+      let catObj = undefined;
+      if (budget.categoryId) {
+        catObj = categories.find(c => c.id === budget.categoryId);
+      }
 
-    const now = new Date();
-    let catObj = undefined;
-    if (budget.categoryId) {
-      catObj = categories.find(c => c.id === budget.categoryId);
-    }
-
-    addTransaction({
-      amount,
-      type: 'expense',
-      categoryId: budget.categoryId || 'cat_extra',
-      account,
-      date: now.toISOString().split('T')[0],
-      time: now.toTimeString().split(' ')[0].slice(0, 5),
-      notes: note.trim() || `Gasto en ${budget.name}`,
-      color: catObj?.color || 'var(--color-primary)',
-      icon: catObj?.icon || 'Coins'
+      addTransaction({
+        amount,
+        type: 'expense',
+        categoryId: budget.categoryId || 'cat_extra',
+        account,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        notes: note.trim() || `Gasto en ${budget.name}`,
+        color: catObj?.color || 'var(--color-primary)',
+        icon: catObj?.icon || 'Coins'
+      });
     });
   };
 
@@ -431,36 +440,31 @@ export const BudgetView: React.FC = () => {
       return;
     }
 
-    const accountOption = prompt(
-      `¿De qué cuenta se registrará la transacción inicial?\n(Para Préstamos realizados se registrará un Gasto; para Deudas recibidas se registrará un Ingreso).\nEscribe: Efectivo, Tarjeta o Banco`,
-      'Efectivo'
-    );
-    if (accountOption === null) return; // User cancelled
-    const account = accountOption.trim() || 'Efectivo';
+    promptAccountSelection(`Cuenta para registrar transacción inicial`, (account) => {
+      addDebt({
+        personOrInstitution: debtPerson.trim(),
+        amount: total,
+        remainingAmount: total,
+        type: debtType,
+        dueDate: debtDueDate || undefined,
+        notes: debtNotes.trim() || undefined
+      });
 
-    addDebt({
-      personOrInstitution: debtPerson.trim(),
-      amount: total,
-      remainingAmount: total,
-      type: debtType,
-      dueDate: debtDueDate || undefined,
-      notes: debtNotes.trim() || undefined
+      const now = new Date();
+      addTransaction({
+        amount: total,
+        type: debtType === 'borrowed' ? 'income' : 'expense',
+        categoryId: debtType === 'borrowed' ? 'cat_extra' : 'cat_saving',
+        account,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        notes: `${debtType === 'borrowed' ? 'Préstamo recibido de' : 'Préstamo realizado a'}: ${debtPerson.trim()}`,
+        color: debtType === 'borrowed' ? 'var(--color-success)' : 'var(--color-danger)',
+        icon: debtType === 'borrowed' ? 'Coins' : 'TrendingDown'
+      });
+
+      handleCloseDebtModal();
     });
-
-    const now = new Date();
-    addTransaction({
-      amount: total,
-      type: debtType === 'borrowed' ? 'income' : 'expense',
-      categoryId: debtType === 'borrowed' ? 'cat_extra' : 'cat_saving',
-      account,
-      date: now.toISOString().split('T')[0],
-      time: now.toTimeString().split(' ')[0].slice(0, 5),
-      notes: `${debtType === 'borrowed' ? 'Préstamo recibido de' : 'Préstamo realizado a'}: ${debtPerson.trim()}`,
-      color: debtType === 'borrowed' ? 'var(--color-success)' : 'var(--color-danger)',
-      icon: debtType === 'borrowed' ? 'Coins' : 'TrendingDown'
-    });
-
-    handleCloseDebtModal();
   };
 
   const handleAbonarDebt = (debt: Debt) => {
@@ -472,29 +476,25 @@ export const BudgetView: React.FC = () => {
       return;
     }
 
-    const accountOption = prompt(`¿De qué cuenta deseas realizar el abono?\nEscribe: Efectivo, Tarjeta o Banco`, 'Banco');
-    if (accountOption === null) return;
-    const account = accountOption.trim() || 'Banco';
+    promptAccountSelection(`Cuenta para realizar el abono`, (account) => {
+      const newRemaining = Math.max(0, debt.remainingAmount - amount);
+      updateDebt({
+        ...debt,
+        remainingAmount: newRemaining
+      });
 
-    // Update remaining amount
-    const newRemaining = Math.max(0, debt.remainingAmount - amount);
-    updateDebt({
-      ...debt,
-      remainingAmount: newRemaining
-    });
-
-    // Register transaction
-    const now = new Date();
-    addTransaction({
-      amount,
-      type: debt.type === 'borrowed' ? 'expense' : 'income',
-      categoryId: debt.type === 'borrowed' ? 'cat_saving' : 'cat_extra',
-      account,
-      date: now.toISOString().split('T')[0],
-      time: now.toTimeString().split(' ')[0].slice(0, 5),
-      notes: `${debt.type === 'borrowed' ? 'Abono a deuda' : 'Cobro de préstamo'}: ${debt.personOrInstitution}`,
-      color: debt.type === 'borrowed' ? 'var(--color-danger)' : 'var(--color-success)',
-      icon: debt.type === 'borrowed' ? 'TrendingDown' : 'Coins'
+      const now = new Date();
+      addTransaction({
+        amount,
+        type: debt.type === 'borrowed' ? 'expense' : 'income',
+        categoryId: debt.type === 'borrowed' ? 'cat_saving' : 'cat_extra',
+        account,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        notes: `${debt.type === 'borrowed' ? 'Abono a deuda' : 'Cobro de préstamo'}: ${debt.personOrInstitution}`,
+        color: debt.type === 'borrowed' ? 'var(--color-danger)' : 'var(--color-success)',
+        icon: debt.type === 'borrowed' ? 'TrendingDown' : 'Coins'
+      });
     });
   };
 
@@ -508,50 +508,46 @@ export const BudgetView: React.FC = () => {
     const confirmPay = confirm(`¿Estás seguro de que deseas liquidar esta deuda de ${profile.currency}${debt.remainingAmount.toLocaleString()}?`);
     if (!confirmPay) return;
     
-    const accountOption = prompt(`¿Con qué cuenta deseas pagar?\nEscribe: Efectivo, Tarjeta o Banco`, 'Efectivo');
-    if (accountOption === null) return;
-    const account = accountOption.trim() || 'Efectivo';
-    
-    const now = new Date();
-    addTransaction({
-      amount: debt.remainingAmount,
-      type: 'expense',
-      categoryId: 'cat_extra',
-      account,
-      date: now.toISOString().split('T')[0],
-      time: now.toTimeString().split(' ')[0].slice(0, 5),
-      notes: `Liquidación de deuda con ${debt.personOrInstitution}`,
-      color: '#ef4444',
-      icon: 'ArrowUpRight'
+    promptAccountSelection(`¿Con qué cuenta deseas pagar?`, (account) => {
+      const now = new Date();
+      addTransaction({
+        amount: debt.remainingAmount,
+        type: 'expense',
+        categoryId: 'cat_extra',
+        account,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        notes: `Liquidación de deuda con ${debt.personOrInstitution}`,
+        color: '#ef4444',
+        icon: 'ArrowUpRight'
+      });
+      
+      updateDebt({ ...debt, remainingAmount: 0 });
+      alert('Deuda liquidada y registrada como gasto.');
     });
-    
-    updateDebt({ ...debt, remainingAmount: 0 });
-    alert('Deuda liquidada y registrada como gasto.');
   };
 
   const handleCollectDebtInFull = (debt: Debt) => {
     const confirmCollect = confirm(`¿Estás seguro de que deseas marcar como cobrado este préstamo de ${profile.currency}${debt.remainingAmount.toLocaleString()}?`);
     if (!confirmCollect) return;
     
-    const accountOption = prompt(`¿En qué cuenta recibiste el pago?\nEscribe: Efectivo, Tarjeta o Banco`, 'Efectivo');
-    if (accountOption === null) return;
-    const account = accountOption.trim() || 'Efectivo';
-    
-    const now = new Date();
-    addTransaction({
-      amount: debt.remainingAmount,
-      type: 'income',
-      categoryId: 'cat_sal',
-      account,
-      date: now.toISOString().split('T')[0],
-      time: now.toTimeString().split(' ')[0].slice(0, 5),
-      notes: `Retorno de préstamo de ${debt.personOrInstitution}`,
-      color: '#22c55e',
-      icon: 'ArrowDownLeft'
+    promptAccountSelection(`¿En qué cuenta recibiste el pago?`, (account) => {
+      const now = new Date();
+      addTransaction({
+        amount: debt.remainingAmount,
+        type: 'income',
+        categoryId: 'cat_sal',
+        account,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        notes: `Retorno de préstamo de ${debt.personOrInstitution}`,
+        color: '#22c55e',
+        icon: 'ArrowDownLeft'
+      });
+      
+      updateDebt({ ...debt, remainingAmount: 0 });
+      alert('Préstamo cobrado y registrado como ingreso.');
     });
-    
-    updateDebt({ ...debt, remainingAmount: 0 });
-    alert('Préstamo cobrado y registrado como ingreso.');
   };
 
 
@@ -1503,6 +1499,58 @@ export const BudgetView: React.FC = () => {
             <button className="btn btn-primary" onClick={handleCreateGoal}>
               {editingGoal ? 'Guardar Cambios' : 'Crear Meta'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* --- CUSTOM ACCOUNT PICKER SHEET --- */}
+      {showAccountPicker && (
+        <div className="modal-overlay open" onClick={() => setShowAccountPicker(false)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ paddingBottom: '30px' }}>
+            <div className="modal-header">
+              <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0 }}>{accountPickerTitle}</h3>
+              <button className="btn-ghost" onClick={() => setShowAccountPicker(false)}>
+                <DynamicIcon name="X" size={20} color="var(--text-secondary)" />
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' }}>
+              {[
+                { name: 'Efectivo', icon: 'Banknote' },
+                { name: 'Tarjeta', icon: 'CreditCard' },
+                { name: 'Banco', icon: 'Building2' },
+                { name: 'Broker', icon: 'TrendingUp' }
+              ].map(acc => (
+                <button
+                  key={acc.name}
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    if (accountPickerCallback) {
+                      accountPickerCallback(acc.name);
+                    }
+                    setShowAccountPicker(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    padding: '14px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    borderRadius: '12px'
+                  }}
+                >
+                  <DynamicIcon 
+                    name={acc.icon} 
+                    size={18} 
+                    color="var(--color-primary)" 
+                  />
+                  <span>{acc.name}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
