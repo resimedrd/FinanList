@@ -407,19 +407,25 @@ export const BudgetView: React.FC = () => {
     }
   };
 
-  const handleResetBudget = (b: Budget) => {
-    if (confirm(`¿Deseas reiniciar el ciclo del presupuesto "${b.name || 'Presupuesto'}"?\nEl monto consumido volverá a 0 a partir de hoy (los gastos anteriores se conservan en tu historial de movimientos pero ya no se restarán de este nuevo ciclo).`)) {
+  const handleResetAllBudgets = () => {
+    if (budgets.length === 0) {
+      alert('No tienes presupuestos activos para reiniciar.');
+      return;
+    }
+    if (confirm('¿Deseas reiniciar el ciclo de TODOS tus presupuestos?\nLos montos consumidos volverán a 0% a partir de hoy (los gastos anteriores se conservan en tu historial pero ya no se restarán de este nuevo ciclo).')) {
       const today = new Date().toISOString().split('T')[0];
       const nextMonth = new Date();
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       const oneMonthLater = nextMonth.toISOString().split('T')[0];
 
-      updateBudget({
-        ...b,
-        startDate: today,
-        endDate: oneMonthLater
+      budgets.forEach(b => {
+        updateBudget({
+          ...b,
+          startDate: today,
+          endDate: oneMonthLater
+        });
       });
-      alert('Presupuesto reiniciado con éxito.');
+      alert('¡Todos los presupuestos han sido reiniciados!');
     }
   };
 
@@ -795,40 +801,14 @@ export const BudgetView: React.FC = () => {
                         )}
                       </div>
                       
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          onClick={() => handleResetBudget(b)}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            height: '24px',
-                            width: 'auto',
-                            color: 'var(--text-secondary)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: '8px',
-                            backgroundColor: 'transparent',
-                            cursor: 'pointer'
-                          }}
-                          title="Reiniciar Ciclo"
-                        >
-                          <DynamicIcon name="RotateCcw" size={11} />
-                          <span>Reiniciar</span>
-                        </button>
-
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => handleQuickExpense(b)}
-                          style={{ padding: '4px 10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', height: '24px', width: 'auto' }}
-                        >
-                          <DynamicIcon name="Plus" size={12} />
-                          <span>Gasto Rápido</span>
-                        </button>
-                      </div>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => handleQuickExpense(b)}
+                        style={{ padding: '4px 10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', height: '24px', width: 'auto' }}
+                      >
+                        <DynamicIcon name="Plus" size={12} />
+                        <span>Gasto Rápido</span>
+                      </button>
                     </div>
 
                   </div>
@@ -843,6 +823,31 @@ export const BudgetView: React.FC = () => {
                   <DynamicIcon name="PieChart" size={16} color="var(--color-primary)" />
                   <span>Resumen General de Presupuestos</span>
                 </h4>
+                
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleResetAllBudgets}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    height: '24px',
+                    width: 'auto',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--color-primary)',
+                    color: 'white',
+                    border: 'none',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                  title="Reiniciar todos los presupuestos"
+                >
+                  <DynamicIcon name="RotateCcw" size={11} color="white" />
+                  <span>Reiniciar Ciclos</span>
+                </button>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '4px', width: '100%' }}>
