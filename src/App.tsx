@@ -10,6 +10,7 @@ import { OnboardingView } from './views/OnboardingView';
 import { TransactionModal } from './components/TransactionModal';
 import { DynamicIcon } from './components/DynamicIcon';
 import { Transaction } from './models/types';
+import { WelcomeTour } from './components/WelcomeTour';
 
 const MainLayout: React.FC = () => {
   const { isAuthenticated, activeTab, setActiveTab, isOnboarded, profile, setAuthenticated } = useApp();
@@ -66,6 +67,18 @@ const MainLayout: React.FC = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [profile.pinCode, setAuthenticated]);
+
+  // Welcome Tour state
+  const [showWelcomeTour, setShowWelcomeTour] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    if (isAuthenticated && isOnboarded) {
+      const tourDone = localStorage.getItem('finanlist_tour_done');
+      if (!tourDone) {
+        setShowWelcomeTour(true);
+      }
+    }
+  }, [isAuthenticated, isOnboarded]);
 
   // Transaction Modal state
   const [modalOpen, setModalOpen] = useState<boolean>(false);
@@ -137,7 +150,7 @@ const MainLayout: React.FC = () => {
       case 'stats':
         return <StatsView />;
       case 'profile':
-        return <ProfileView />;
+        return <ProfileView onTriggerWelcomeTour={() => setShowWelcomeTour(true)} />;
       default:
         return <HomeView onOpenTransactionModal={handleOpenTransactionModal} />;
     }
@@ -217,6 +230,15 @@ const MainLayout: React.FC = () => {
       
       {/* Bottom home indicator safe area */}
       <div className="safe-area-bottom" />
+
+      {showWelcomeTour && (
+        <WelcomeTour 
+          onClose={() => {
+            localStorage.setItem('finanlist_tour_done', 'true');
+            setShowWelcomeTour(false);
+          }} 
+        />
+      )}
     </div>
   );
 };

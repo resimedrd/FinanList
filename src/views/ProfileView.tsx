@@ -15,7 +15,11 @@ const ACCENT_COLORS = [
   { name: 'Rosa Violeta', value: '#ec4899' }
 ];
 
-export const ProfileView: React.FC = () => {
+interface ProfileViewProps {
+  onTriggerWelcomeTour?: () => void;
+}
+
+export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }) => {
   const {
     profile,
     updateProfile,
@@ -426,6 +430,12 @@ export const ProfileView: React.FC = () => {
             <DynamicIcon name="CalendarClock" size={16} />
             <span>Suscripciones / Fijos</span>
           </button>
+          {onTriggerWelcomeTour && (
+            <button className="btn btn-secondary" onClick={onTriggerWelcomeTour} style={{ ...styles.actionBtn, gridColumn: 'span 2' }}>
+              <DynamicIcon name="HelpCircle" size={16} />
+              <span>Ver Tutorial de Bienvenida</span>
+            </button>
+          )}
         </div>
       </div>
 
