@@ -440,7 +440,8 @@ export const BudgetView: React.FC = () => {
       return;
     }
 
-    promptAccountSelection(`Cuenta para registrar transacción inicial`, (account) => {
+    if (debtType === 'borrowed') {
+      // Yo Debo (Borrowed): Do not register any initial transaction (won't affect cash balance until paid)
       addDebt({
         personOrInstitution: debtPerson.trim(),
         amount: total,
@@ -449,22 +450,35 @@ export const BudgetView: React.FC = () => {
         dueDate: debtDueDate || undefined,
         notes: debtNotes.trim() || undefined
       });
-
-      const now = new Date();
-      addTransaction({
-        amount: total,
-        type: debtType === 'borrowed' ? 'income' : 'expense',
-        categoryId: debtType === 'borrowed' ? 'cat_extra' : 'cat_saving',
-        account,
-        date: now.toISOString().split('T')[0],
-        time: now.toTimeString().split(' ')[0].slice(0, 5),
-        notes: `${debtType === 'borrowed' ? 'Préstamo recibido de' : 'Préstamo realizado a'}: ${debtPerson.trim()}`,
-        color: debtType === 'borrowed' ? 'var(--color-success)' : 'var(--color-danger)',
-        icon: debtType === 'borrowed' ? 'Coins' : 'TrendingDown'
-      });
-
       handleCloseDebtModal();
-    });
+    } else {
+      // Me Deben (Lent): Registers an initial expense transaction since cash left our wallet
+      promptAccountSelection(`Cuenta para registrar la salida de dinero`, (account) => {
+        addDebt({
+          personOrInstitution: debtPerson.trim(),
+          amount: total,
+          remainingAmount: total,
+          type: debtType,
+          dueDate: debtDueDate || undefined,
+          notes: debtNotes.trim() || undefined
+        });
+
+        const now = new Date();
+        addTransaction({
+          amount: total,
+          type: 'expense',
+          categoryId: 'cat_saving',
+          account,
+          date: now.toISOString().split('T')[0],
+          time: now.toTimeString().split(' ')[0].slice(0, 5),
+          notes: `Préstamo realizado a: ${debtPerson.trim()}`,
+          color: 'var(--color-danger)',
+          icon: 'TrendingDown'
+        });
+
+        handleCloseDebtModal();
+      });
+    }
   };
 
   const handleAbonarDebt = (debt: Debt) => {
