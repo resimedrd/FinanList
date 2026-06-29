@@ -12,7 +12,7 @@ import { DynamicIcon } from './components/DynamicIcon';
 import { Transaction } from './models/types';
 
 const MainLayout: React.FC = () => {
-  const { isAuthenticated, activeTab, setActiveTab, isOnboarded, profile } = useApp();
+  const { isAuthenticated, activeTab, setActiveTab, isOnboarded, profile, setAuthenticated } = useApp();
   
   // Apply theme and accent color globally
   React.useEffect(() => {
@@ -40,6 +40,32 @@ const MainLayout: React.FC = () => {
       }
     }
   }, [profile.theme, profile.accentColor]);
+
+  // Lock app after 30 seconds of inactivity in background
+  React.useEffect(() => {
+    if (!profile.pinCode) return; // Only lock if a PIN is configured
+
+    let leaveTime: number | null = null;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        leaveTime = Date.now();
+      } else if (document.visibilityState === 'visible') {
+        if (leaveTime !== null) {
+          const diffSeconds = (Date.now() - leaveTime) / 1000;
+          if (diffSeconds >= 30) {
+            setAuthenticated(false);
+          }
+          leaveTime = null; // Reset
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [profile.pinCode, setAuthenticated]);
 
   // Transaction Modal state
   const [modalOpen, setModalOpen] = useState<boolean>(false);
