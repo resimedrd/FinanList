@@ -475,7 +475,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
             </span>
           ) : (
             <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
-              Vas por buen camino este mes.
+              Vas por buen camino en este ciclo.
             </span>
           )}
         </div>

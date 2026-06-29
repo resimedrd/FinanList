@@ -49,18 +49,19 @@ export class StatsService {
     const monthlySavings = Math.max(0, monthlyIncome - monthlyExpense);
 
     // Budget progress
-    // We take the total monthly budget amount and see what % has been consumed by expenses this month
-    const monthlyTotalBudget = budgets.find(b => b.type === 'monthly' && this.getYearMonth(b.startDate) === currentYM);
+    // We take the total monthly budget amount and see what % has been consumed by expenses in its active period
+    const monthlyTotalBudget = budgets.find(b => b.type === 'monthly');
     let budgetProgress = 0;
     if (monthlyTotalBudget && monthlyTotalBudget.amount > 0) {
-      // Find category budget ids active this month
+      // Find category budget ids active
       const activeCategoryBudgetIds = new Set(
-        budgets.filter(x => x.type === 'category' && x.categoryId && this.getYearMonth(x.startDate) === currentYM).map(x => x.categoryId)
+        budgets.filter(x => x.type === 'category' && x.categoryId).map(x => x.categoryId)
       );
-      // Filter expenses: exclude active category budgets and savings goals (cat_saving)
+      // Filter expenses: exclude active category budgets and savings goals (cat_saving) within monthly budget period
       const generalExpenses = transactions
         .filter(tx => tx.type === 'expense' && 
-                      this.getYearMonth(tx.date) === currentYM && 
+                      tx.date >= monthlyTotalBudget.startDate && 
+                      tx.date <= monthlyTotalBudget.endDate && 
                       !activeCategoryBudgetIds.has(tx.categoryId) && 
                       tx.categoryId !== 'cat_saving')
         .reduce((sum, tx) => sum + tx.amount, 0);
@@ -68,15 +69,18 @@ export class StatsService {
       budgetProgress = Math.min(100, (generalExpenses / monthlyTotalBudget.amount) * 100);
     } else {
       // If no global budget is set, calculate sum of category budgets
-      const catBudgets = budgets.filter(b => b.type === 'category' && this.getYearMonth(b.startDate) === currentYM);
+      const catBudgets = budgets.filter(b => b.type === 'category');
       const totalCatBudget = catBudgets.reduce((sum, b) => sum + b.amount, 0);
       if (totalCatBudget > 0) {
-        // find expenses matching those categories
-        const catIds = new Set(catBudgets.map(b => b.categoryId));
-        const matchedExpense = transactions
-          .filter(tx => tx.type === 'expense' && this.getYearMonth(tx.date) === currentYM && catIds.has(tx.categoryId))
-          .reduce((sum, tx) => sum + tx.amount, 0);
-        budgetProgress = Math.min(100, (matchedExpense / totalCatBudget) * 100);
+        // find expenses matching those categories in their active periods
+        let totalMatchedExpense = 0;
+        catBudgets.forEach(b => {
+          const matchedExpense = transactions
+            .filter(tx => tx.type === 'expense' && tx.date >= b.startDate && tx.date <= b.endDate && tx.categoryId === b.categoryId)
+            .reduce((sum, tx) => sum + tx.amount, 0);
+          totalMatchedExpense += matchedExpense;
+        });
+        budgetProgress = Math.min(100, (totalMatchedExpense / totalCatBudget) * 100);
       }
     }
 

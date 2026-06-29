@@ -151,8 +151,6 @@ export const BudgetView: React.FC = () => {
   };
 
   const getBudgetSpent = (b: Budget, type: 'regular' | 'contingency' | 'total' = 'regular'): number => {
-    const now = new Date();
-    const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const activeCategoryBudgetIds = new Set(
       budgets.filter(x => x.type === 'category' && x.categoryId).map(x => x.categoryId)
     );
@@ -161,8 +159,9 @@ export const BudgetView: React.FC = () => {
       .filter(tx => {
         if (tx.type !== 'expense') return false;
         
-        const isThisMonth = tx.date.substring(0, 7) === currentYM;
-        if (!isThisMonth) return false;
+        // Filter by budget period (manually resettable)
+        const isWithinPeriod = tx.date >= b.startDate && tx.date <= b.endDate;
+        if (!isWithinPeriod) return false;
 
         const isContingencyTx = !!tx.notes?.includes('#contingency');
         if (type === 'regular' && isContingencyTx) return false;
@@ -173,10 +172,6 @@ export const BudgetView: React.FC = () => {
         }
 
         if (b.type === 'weekly') {
-          const txDate = new Date(tx.date);
-          const diffTime = Math.abs(now.getTime() - txDate.getTime());
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          if (diffDays > 7) return false;
           return !activeCategoryBudgetIds.has(tx.categoryId) && tx.categoryId !== 'cat_saving';
         }
 
@@ -409,6 +404,22 @@ export const BudgetView: React.FC = () => {
   const handleDeleteBudget = (id: string) => {
     if (confirm('¿Deseas eliminar este presupuesto?')) {
       deleteBudget(id);
+    }
+  };
+
+  const handleResetBudget = (b: Budget) => {
+    if (confirm(`¿Deseas reiniciar el ciclo del presupuesto "${b.name || 'Presupuesto'}"?\nEl monto consumido volverá a 0 a partir de hoy (los gastos anteriores se conservan en tu historial de movimientos pero ya no se restarán de este nuevo ciclo).`)) {
+      const today = new Date().toISOString().split('T')[0];
+      const nextMonth = new Date();
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      const oneMonthLater = nextMonth.toISOString().split('T')[0];
+
+      updateBudget({
+        ...b,
+        startDate: today,
+        endDate: oneMonthLater
+      });
+      alert('Presupuesto reiniciado con éxito.');
     }
   };
 
@@ -784,14 +795,40 @@ export const BudgetView: React.FC = () => {
                         )}
                       </div>
                       
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => handleQuickExpense(b)}
-                        style={{ padding: '4px 10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', height: '24px', width: 'auto' }}
-                      >
-                        <DynamicIcon name="Plus" size={12} />
-                        <span>Gasto Rápido</span>
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => handleResetBudget(b)}
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '11px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            height: '24px',
+                            width: 'auto',
+                            color: 'var(--text-secondary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            backgroundColor: 'transparent',
+                            cursor: 'pointer'
+                          }}
+                          title="Reiniciar Ciclo"
+                        >
+                          <DynamicIcon name="RotateCcw" size={11} />
+                          <span>Reiniciar</span>
+                        </button>
+
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handleQuickExpense(b)}
+                          style={{ padding: '4px 10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', height: '24px', width: 'auto' }}
+                        >
+                          <DynamicIcon name="Plus" size={12} />
+                          <span>Gasto Rápido</span>
+                        </button>
+                      </div>
                     </div>
 
                   </div>
