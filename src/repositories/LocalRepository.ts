@@ -23,6 +23,7 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat_health', name: 'Salud', color: '#22c55e', icon: 'HeartPulse' },
   { id: 'cat_travel', name: 'Viajes', color: '#00cccc', icon: 'Plane' },
   { id: 'cat_saving', name: 'Ahorro', color: '#2ecc71', icon: 'Target' },
+  { id: 'cat_emergency', name: 'Imprevistos / Emergencias', color: '#ef4444', icon: 'ShieldAlert' },
   
   // Subcategories
   { id: 'sub_uber', name: 'Uber / Taxi', parentId: 'cat_trans', color: '#4da6ff', icon: 'Sparkles' },
@@ -230,6 +231,13 @@ export class LocalRepository {
         });
         if (needsUpdate) {
           localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(cleanedCats));
+        }
+
+        // Ensure cat_emergency exists for existing users
+        const finalCats = JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]');
+        if (!finalCats.some((c: Category) => c.id === 'cat_emergency')) {
+          finalCats.push({ id: 'cat_emergency', name: 'Imprevistos / Emergencias', color: '#ef4444', icon: 'ShieldAlert' });
+          localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(finalCats));
         }
       } catch (e) {
         console.error("Migration error: ", e);

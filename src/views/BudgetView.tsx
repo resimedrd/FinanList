@@ -107,6 +107,14 @@ export const BudgetView: React.FC = () => {
     setShowAccountPicker(true);
   };
 
+  // Quick Expense Bottom Sheet State
+  const [showQuickExpenseModal, setShowQuickExpenseModal] = useState<boolean>(false);
+  const [quickExpenseBudget, setQuickExpenseBudget] = useState<Budget | null>(null);
+  const [quickExpenseAmount, setQuickExpenseAmount] = useState<string>('');
+  const [quickExpenseNotes, setQuickExpenseNotes] = useState<string>('');
+  const [quickExpenseIsEmergency, setQuickExpenseIsEmergency] = useState<boolean>(false);
+  const [quickExpenseAccount, setQuickExpenseAccount] = useState<string>('Efectivo');
+
   // Inline Category Creation State
   const [showInlineAddCategory, setShowInlineAddCategory] = useState<boolean>(false);
   const [inlineCatName, setInlineCatName] = useState<string>('');
@@ -167,15 +175,19 @@ export const BudgetView: React.FC = () => {
         if (type === 'regular' && isContingencyTx) return false;
         if (type === 'contingency' && !isContingencyTx) return false;
 
+        const belongsToCategoryBudget = b.type === 'category' && b.categoryId &&
+          (tx.categoryId === b.categoryId || (isContingencyTx && tx.notes?.includes(`#budget_cat:${b.categoryId}`)));
+
         if (b.type === 'category' && b.categoryId) {
-          return tx.categoryId === b.categoryId;
+          return belongsToCategoryBudget;
         }
 
-        if (b.type === 'weekly') {
-          return !activeCategoryBudgetIds.has(tx.categoryId) && tx.categoryId !== 'cat_saving';
-        }
-
-        if (b.type === 'monthly') {
+        if (b.type === 'weekly' || b.type === 'monthly') {
+          // If it's a contingency transaction belonging to an active category budget, exclude it from global total to prevent double counting
+          if (isContingencyTx) {
+            const hasAssociatedCatBudget = Array.from(activeCategoryBudgetIds).some(catId => tx.notes?.includes(`#budget_cat:${catId}`));
+            if (hasAssociatedCatBudget) return false;
+          }
           return !activeCategoryBudgetIds.has(tx.categoryId) && tx.categoryId !== 'cat_saving';
         }
 
@@ -276,43 +288,53 @@ export const BudgetView: React.FC = () => {
   };
 
   const handleQuickExpense = (budget: Budget) => {
-    const amountStr = prompt(`Registrar gasto rápido para "${budget.name}"\n¿Cuánto gastaste?`);
-    if (!amountStr) return;
-    const amount = parseFloat(amountStr);
+    setQuickExpenseBudget(budget);
+    setQuickExpenseAmount('');
+    setQuickExpenseNotes('');
+    setQuickExpenseIsEmergency(false);
+    setQuickExpenseAccount('Efectivo');
+    setShowQuickExpenseModal(true);
+  };
+
+  const handleCloseQuickExpenseModal = () => {
+    setQuickExpenseBudget(null);
+    setShowQuickExpenseModal(false);
+  };
+
+  const handleSaveQuickExpense = () => {
+    if (!quickExpenseBudget) return;
+    
+    const amount = parseFloat(quickExpenseAmount);
     if (isNaN(amount) || amount <= 0) {
       alert('Por favor, ingresa un monto válido.');
       return;
     }
 
-    let note = prompt('Nota o concepto (Opcional):', '') || '';
+    const now = new Date();
+    let categoryId = quickExpenseBudget.categoryId || 'cat_extra';
+    let noteText = quickExpenseNotes.trim();
 
-    // If budget has contingency fund, check if it's an emergency
-    if (budget.contingencyAmount && budget.contingencyAmount > 0) {
-      const isContingency = confirm('¿Este gasto es un imprevisto / emergencia?');
-      if (isContingency) {
-        note = note.trim() ? `${note.trim()} #contingency` : 'Imprevisto / Emergencia #contingency';
-      }
+    if (quickExpenseIsEmergency) {
+      categoryId = 'cat_emergency';
+      const tag = quickExpenseBudget.categoryId ? `#budget_cat:${quickExpenseBudget.categoryId}` : `#budget_id:${quickExpenseBudget.id}`;
+      noteText = noteText ? `${noteText} #contingency ${tag}` : `Imprevisto / Emergencia #contingency ${tag}`;
     }
 
-    promptAccountSelection(`¿Con qué cuenta pagaste "${budget.name}"?`, (account) => {
-      const now = new Date();
-      let catObj = undefined;
-      if (budget.categoryId) {
-        catObj = categories.find(c => c.id === budget.categoryId);
-      }
+    const catObj = categories.find(c => c.id === categoryId);
 
-      addTransaction({
-        amount,
-        type: 'expense',
-        categoryId: budget.categoryId || 'cat_extra',
-        account,
-        date: now.toISOString().split('T')[0],
-        time: now.toTimeString().split(' ')[0].slice(0, 5),
-        notes: note.trim() || `Gasto en ${budget.name}`,
-        color: catObj?.color || 'var(--color-primary)',
-        icon: catObj?.icon || 'Coins'
-      });
+    addTransaction({
+      amount,
+      type: 'expense',
+      categoryId,
+      account: quickExpenseAccount,
+      date: now.toISOString().split('T')[0],
+      time: now.toTimeString().split(' ')[0].slice(0, 5),
+      notes: noteText || `Gasto en ${quickExpenseBudget.name}`,
+      color: catObj?.color || 'var(--color-primary)',
+      icon: catObj?.icon || 'Coins'
     });
+
+    handleCloseQuickExpenseModal();
   };
 
 
@@ -1611,6 +1633,148 @@ export const BudgetView: React.FC = () => {
                   <span>{acc.name}</span>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK EXPENSE BOTTOM SHEET MODAL */}
+      {showQuickExpenseModal && quickExpenseBudget && (
+        <div className="modal-overlay open" onClick={handleCloseQuickExpenseModal}>
+          <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Registrar Gasto Rápido</h3>
+              <button className="modal-close" onClick={handleCloseQuickExpenseModal}>
+                <DynamicIcon name="X" size={20} />
+              </button>
+            </div>
+            
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px', marginTop: '-8px' }}>
+              Presupuesto: <strong>{quickExpenseBudget.name}</strong>
+            </div>
+
+            <div className="input-group">
+              <label className="input-label">Monto Gastado ({profile.currency})</label>
+              <input
+                type="number"
+                pattern="[0-9]*"
+                inputMode="decimal"
+                value={quickExpenseAmount}
+                onChange={(e) => setQuickExpenseAmount(e.target.value)}
+                className="input-field"
+                placeholder="0.00"
+                style={{ fontSize: '18px', fontWeight: '700' }}
+                autoFocus
+              />
+            </div>
+
+            <div className="input-group">
+              <label className="input-label">Concepto / Detalle (Opcional)</label>
+              <input
+                type="text"
+                value={quickExpenseNotes}
+                onChange={(e) => setQuickExpenseNotes(e.target.value)}
+                className="input-field"
+                placeholder="Ej. McDonald's, Gasolina, Supermercado..."
+              />
+            </div>
+
+            {/* Emergency Toggle (Only if budget has a contingency amount) */}
+            {quickExpenseBudget.contingencyAmount && quickExpenseBudget.contingencyAmount > 0 ? (
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between', 
+                  backgroundColor: 'var(--color-danger-light)', 
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  borderRadius: '12px',
+                  padding: '12px',
+                  marginBottom: '16px',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setQuickExpenseIsEmergency(!quickExpenseIsEmergency)}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <DynamicIcon name="AlertOctagon" size={20} color="var(--color-danger)" />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--color-danger)' }}>
+                      ¿Es un imprevisto / emergencia?
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                      Se restará del colchón de imprevistos.
+                    </div>
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={quickExpenseIsEmergency}
+                  onChange={(e) => setQuickExpenseIsEmergency(e.target.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ width: '18px', height: '18px', accentColor: 'var(--color-danger)' }}
+                />
+              </div>
+            ) : null}
+
+            {/* Account Selector segmented cards */}
+            <div className="input-group">
+              <label className="input-label">Cuenta de Pago</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '4px' }}>
+                {[
+                  { name: 'Efectivo', icon: 'Banknote' },
+                  { name: 'Tarjeta', icon: 'CreditCard' },
+                  { name: 'Banco', icon: 'Building2' },
+                  { name: 'Broker', icon: 'TrendingUp' }
+                ].map(acc => (
+                  <button
+                    key={acc.name}
+                    type="button"
+                    onClick={() => setQuickExpenseAccount(acc.name)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '12px',
+                      borderRadius: '12px',
+                      border: '1px solid',
+                      borderColor: quickExpenseAccount === acc.name ? 'var(--color-primary)' : 'var(--border-color)',
+                      backgroundColor: quickExpenseAccount === acc.name ? 'var(--color-primary-light)' : 'var(--bg-input)',
+                      color: quickExpenseAccount === acc.name ? 'var(--color-primary)' : 'var(--text-primary)',
+                      fontWeight: '600',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <DynamicIcon 
+                      name={acc.icon} 
+                      size={16} 
+                      color={quickExpenseAccount === acc.name ? 'var(--color-primary)' : 'var(--text-secondary)'} 
+                    />
+                    <span>{acc.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={handleCloseQuickExpenseModal}
+                style={{ flex: 1 }}
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={handleSaveQuickExpense}
+                style={{ flex: 1 }}
+              >
+                Registrar Gasto
+              </button>
             </div>
           </div>
         </div>

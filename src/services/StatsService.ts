@@ -140,6 +140,7 @@ export class StatsService {
       else if (id === 'cat_sal') displayName = 'Sueldo';
       else if (id === 'cat_inv') displayName = 'Inversiones';
       else if (id === 'cat_extra') displayName = 'Otros Ingresos';
+      else if (id === 'cat_emergency') displayName = 'Imprevistos / Emergencias';
 
       return {
         categoryId: id,

@@ -324,7 +324,14 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
                 </div>
                 <div className="tx-details">
                   <div className="tx-title">
-                    {tx.categoryId.replace('cat_', '').replace(/^\w/, c => c.toUpperCase())}
+                    {(() => {
+                      const cat = categories.find(c => c.id === tx.categoryId);
+                      if (tx.notes) {
+                        const cleanNotes = tx.notes.replace(/#\w+(:[^\s]+)?/g, '').trim();
+                        if (cleanNotes) return cleanNotes;
+                      }
+                      return cat ? cat.name : tx.categoryId.replace('cat_', '').replace(/^\w/, c => c.toUpperCase());
+                    })()}
                     {tx.favorite && (
                       <span style={{ marginLeft: '6px' }}>
                         <DynamicIcon name="Heart" size={12} color="#f43f5e" />
