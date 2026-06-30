@@ -384,7 +384,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
 
         {/* Mini stats for savings */}
         <div style={styles.savingsRow}>
-          <span style={styles.savingsLabel}>Ahorro estimado este mes:</span>
+          <span style={styles.savingsLabel}>Ahorro destinado este mes:</span>
           <span style={styles.savingsVal}>{formatVal(summary.monthlySavings)}</span>
         </div>
       </div>

@@ -26,6 +26,7 @@ export class StatsService {
     let availableCash = 0;
     let monthlyIncome = 0;
     let monthlyExpense = 0;
+    let monthlySavings = 0;
 
     transactions.forEach(tx => {
       const val = tx.amount;
@@ -39,14 +40,17 @@ export class StatsService {
         }
       } else {
         totalBalance -= val;
-        if (isCurrentMonth) monthlyExpense += val;
+        if (isCurrentMonth) {
+          monthlyExpense += val;
+          if (tx.categoryId === 'cat_saving') {
+            monthlySavings += val;
+          }
+        }
         if (tx.account !== 'Broker' && tx.account !== 'Inversiones') {
           availableCash -= val;
         }
       }
     });
-
-    const monthlySavings = Math.max(0, monthlyIncome - monthlyExpense);
 
     // Budget progress
     // We take the total monthly budget amount and see what % has been consumed by expenses in its active period
