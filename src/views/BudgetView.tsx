@@ -1640,7 +1640,7 @@ export const BudgetView: React.FC = () => {
 
       {/* QUICK EXPENSE BOTTOM SHEET MODAL */}
       {showQuickExpenseModal && quickExpenseBudget && (
-        <div className="modal-overlay open" onClick={handleCloseQuickExpenseModal} style={{ zIndex: 3000 }}>
+        <div className="modal-overlay open" onClick={handleCloseQuickExpenseModal} style={{ zIndex: 99 }}>
           <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Registrar Gasto Rápido</h3>

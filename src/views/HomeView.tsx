@@ -249,7 +249,8 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
   };
 
   return (
-    <div className="view-content animate-fade-in">
+    <>
+      <div className="view-content animate-fade-in">
       {/* Header Profile Info with Brand Title and Sub-greeting */}
       <div style={styles.header}>
         <div>
@@ -634,10 +635,11 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           </div>
         )}
       </div>
+      </div>
 
       {/* QUICK EXPENSE BOTTOM SHEET MODAL */}
       {showQuickExpenseModal && quickExpenseTarget && (
-        <div className="modal-overlay open" onClick={handleCloseQuickExpenseModal} style={{ zIndex: 3000 }}>
+        <div className="modal-overlay open" onClick={handleCloseQuickExpenseModal} style={{ zIndex: 99 }}>
           <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Registrar Gasto Rápido</h3>
@@ -776,7 +778,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 
