@@ -30,6 +30,16 @@ export const BudgetView: React.FC = () => {
 
 
   const [activeSegment, setActiveSegment] = useState<'budgets' | 'goals' | 'debts'>('budgets');
+
+  // Calculate total savings allocated this month
+  const getMonthlySavingsAllocated = () => {
+    const now = new Date();
+    const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return transactions
+      .filter(tx => tx.type === 'expense' && tx.categoryId === 'cat_saving' && tx.date.substring(0, 7) === currentYM)
+      .reduce((sum, tx) => sum + tx.amount, 0);
+  };
+  const monthlySavingsAllocated = getMonthlySavingsAllocated();
   
   // Modals state
   const [showAddBudget, setShowAddBudget] = useState<boolean>(false);
@@ -928,6 +938,22 @@ export const BudgetView: React.FC = () => {
       {/* --- SAVINGS GOALS SEGMENT --- */}
       {activeSegment === 'goals' && (
         <div style={styles.listContainer}>
+          {/* Card Resumen de Ahorros del Mes */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderLeft: '4px solid var(--color-primary)', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <DynamicIcon name="PiggyBank" size={20} color="var(--color-primary)" />
+              <span style={{ fontWeight: '700', fontSize: '14px', color: 'var(--text-secondary)' }}>Ahorro Destinado este Mes</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '4px' }}>
+              <h2 style={{ fontSize: '24px', fontWeight: '800', margin: 0, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
+                {stealthMode ? '••••' : `${profile.currency}${monthlySavingsAllocated.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              </h2>
+            </div>
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+              Dinero depositado en metas y aportes directos al ahorro en este ciclo.
+            </span>
+          </div>
+
           <button className="btn btn-secondary" onClick={() => setShowAddGoal(true)} style={styles.addBtn}>
             <DynamicIcon name="Plus" size={16} />
             <span>Nueva Meta de Ahorro</span>

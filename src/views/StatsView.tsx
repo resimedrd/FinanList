@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { StatsService } from '../services/StatsService';
+import { PdfReportService } from '../services/PdfReportService';
 import { DonutChart } from '../components/DonutChart';
 import { IncomeExpenseBarChart, CashFlowLineChart } from '../components/FinancialCharts';
 import { DynamicIcon } from '../components/DynamicIcon';
 
 export const StatsView: React.FC = () => {
-  const { transactions, budgets, profile, stealthMode, setStealthMode } = useApp();
+  const { transactions, budgets, profile, stealthMode, setStealthMode, goals, debts, categories } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'distribution' | 'comparison' | 'flow'>('distribution');
+  const [activeTab, setActiveTab] = useState<'distribution' | 'comparison' | 'flow' | 'report'>('distribution');
 
   // Calculations (Month level)
   const summary = StatsService.getSummary(transactions, budgets);
@@ -17,6 +18,33 @@ export const StatsView: React.FC = () => {
   const averages = StatsService.getAverages(transactions);
   const cashFlowTrend = StatsService.getCashFlowTrends(transactions);
   const insights = StatsService.getFinancialInsights(transactions, budgets, profile.currency);
+
+  const handleDownloadPdf = () => {
+    try {
+      const now = new Date();
+      let prevM = now.getMonth() - 1;
+      let prevY = now.getFullYear();
+      if (prevM < 0) {
+        prevM = 11;
+        prevY -= 1;
+      }
+      const prevYM = `${prevY}-${String(prevM + 1).padStart(2, '0')}`;
+      const doc = PdfReportService.generateMonthlyReport(
+        transactions,
+        budgets,
+        goals,
+        debts,
+        categories,
+        profile,
+        stealthMode
+      );
+      doc.save(`FinanList_Reporte_${prevYM}.pdf`);
+      alert('Reporte PDF de salud financiera descargado con éxito.');
+    } catch (err) {
+      console.error(err);
+      alert('Hubo un error al generar el reporte en PDF.');
+    }
+  };
 
   const formatVal = (val: number) => {
     if (stealthMode) return `${profile.currency} ••••`;
@@ -86,6 +114,17 @@ export const StatsView: React.FC = () => {
           }}
         >
           Tendencias
+        </button>
+        <button
+          onClick={() => setActiveTab('report')}
+          style={{
+            ...styles.segmentBtn,
+            backgroundColor: activeTab === 'report' ? 'var(--bg-phone)' : 'transparent',
+            color: activeTab === 'report' ? 'var(--color-primary)' : 'var(--text-secondary)',
+            fontWeight: activeTab === 'report' ? '700' : '500',
+          }}
+        >
+          Reporte PDF
         </button>
       </div>
 
@@ -236,6 +275,55 @@ export const StatsView: React.FC = () => {
             <DynamicIcon name="TrendingUp" size={32} className="empty-state-icon" />
             <p>Aún no hay transacciones para analizar.</p>
             <p className="empty-state-quote">"El dinero se multiplica cuando se administra con sabiduría."</p>
+          </div>
+        )}
+
+        {activeTab === 'report' && (
+          <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '10px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', alignSelf: 'center', margin: '10px 0' }}>
+              <div style={{ 
+                width: '48px', 
+                height: '48px', 
+                borderRadius: '12px', 
+                backgroundColor: 'var(--color-primary-light)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center' 
+              }}>
+                <DynamicIcon name="FileText" size={24} color="var(--color-primary)" />
+              </div>
+            </div>
+            
+            <div style={{ textAlign: 'center' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '6px' }}>
+                Reporte Mensual Inteligente
+              </h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4', maxWidth: '300px', margin: '0 auto' }}>
+                Genera un informe detallado en PDF con tus métricas de ahorro, KPIs de salud financiera, desglose de presupuestos y consejos personalizados del asesor.
+              </p>
+            </div>
+
+            <button 
+              onClick={handleDownloadPdf}
+              className="btn btn-primary"
+              style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '10px' }}
+            >
+              <DynamicIcon name="Download" size={16} />
+              <span>Generar y Descargar PDF</span>
+            </button>
+            
+            <div style={{ 
+              fontSize: '11px', 
+              color: 'var(--text-secondary)', 
+              textAlign: 'center', 
+              backgroundColor: 'var(--bg-input)', 
+              padding: '10px', 
+              borderRadius: '8px', 
+              border: '1px solid var(--border-color)',
+              marginTop: '10px'
+            }}>
+              💡 <b>Nota:</b> El informe analizará de forma automática los datos del <b>mes natural anterior</b> para cerrar el ciclo financiero.
+            </div>
           </div>
         )}
       </div>

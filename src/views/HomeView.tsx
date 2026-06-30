@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { StatsService } from '../services/StatsService';
+import { PdfReportService } from '../services/PdfReportService';
 import { DonutChart } from '../components/DonutChart';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { Transaction, Budget } from '../models/types';
@@ -19,8 +20,51 @@ const FINANCE_QUOTES = [
 ];
 
 export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) => {
-  const { transactions, budgets, profile, deleteTransaction, addTransaction, categories, setActiveTab, stealthMode, setStealthMode } = useApp();
+  const { transactions, budgets, profile, deleteTransaction, addTransaction, categories, setActiveTab, stealthMode, setStealthMode, goals, debts } = useApp();
   const [showMonthlyReport, setShowMonthlyReport] = React.useState<boolean>(true);
+
+  // Check if previous month's PDF report is ready and not yet downloaded (Day 1 trigger)
+  const getPdfBannerStatus = () => {
+    const now = new Date();
+    let prevM = now.getMonth() - 1;
+    let prevY = now.getFullYear();
+    if (prevM < 0) {
+      prevM = 11;
+      prevY -= 1;
+    }
+    const prevYM = `${prevY}-${String(prevM + 1).padStart(2, '0')}`;
+    const prevMonthName = new Date(prevY, prevM, 1).toLocaleString('es-ES', { month: 'long' });
+    const capitalizedMonth = prevMonthName.charAt(0).toUpperCase() + prevMonthName.slice(1);
+
+    const lastDownloaded = localStorage.getItem('finanlist_last_pdf_report');
+    const isShowBanner = lastDownloaded !== prevYM;
+
+    return { isShowBanner, prevYM, label: `${capitalizedMonth} ${prevY}` };
+  };
+
+  const pdfBanner = getPdfBannerStatus();
+  const [showPdfBanner, setShowPdfBanner] = React.useState<boolean>(pdfBanner.isShowBanner);
+
+  const handleDownloadPdfReport = () => {
+    try {
+      const doc = PdfReportService.generateMonthlyReport(
+        transactions,
+        budgets,
+        goals,
+        debts,
+        categories,
+        profile,
+        stealthMode
+      );
+      doc.save(`FinanList_Reporte_${pdfBanner.prevYM}.pdf`);
+      localStorage.setItem('finanlist_last_pdf_report', pdfBanner.prevYM);
+      setShowPdfBanner(false);
+      alert('Reporte descargado con éxito.');
+    } catch (err) {
+      console.error(err);
+      alert('Hubo un error al generar el reporte.');
+    }
+  };
 
   // Quick Expense Bottom Sheet State
   const [showQuickExpenseModal, setShowQuickExpenseModal] = React.useState<boolean>(false);
@@ -309,6 +353,57 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         <span style={{ ...styles.quoteText, flex: 1, minWidth: 0 }}>{quoteOfTheDay}</span>
       </div>
 
+      {/* PDF Intelligent Report Notification Banner (Day 1 trigger) */}
+      {showPdfBanner && (
+        <div className="card animate-fade-in" style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '10px', 
+          borderLeft: '4px solid var(--color-primary)', 
+          position: 'relative',
+          paddingRight: '36px',
+          backgroundColor: 'var(--color-primary-light)'
+        }}>
+          <button 
+            onClick={() => setShowPdfBanner(false)}
+            style={{ 
+              position: 'absolute', 
+              top: '12px', 
+              right: '12px', 
+              background: 'none', 
+              border: 'none', 
+              cursor: 'pointer',
+              color: 'var(--text-muted)'
+            }}
+          >
+            <DynamicIcon name="X" size={16} />
+          </button>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '13px', color: 'var(--color-primary)' }}>
+            <DynamicIcon name="Sparkles" size={16} />
+            <span>Reporte Mensual PDF Listo</span>
+          </div>
+          
+          <p style={{ fontSize: '12px', color: 'var(--text-primary)', margin: 0, lineHeight: '1.4' }}>
+            Tu informe inteligente de salud y bienestar financiero de <b>{pdfBanner.label}</b> está disponible para descargar.
+          </p>
+
+          <button 
+            onClick={handleDownloadPdfReport}
+            className="btn btn-primary"
+            style={{ 
+              padding: '8px 16px', 
+              fontSize: '12px', 
+              width: 'fit-content',
+              marginTop: '4px'
+            }}
+          >
+            <DynamicIcon name="Download" size={14} />
+            <span>Descargar Reporte PDF</span>
+          </button>
+        </div>
+      )}
+
       {/* Monthly Closure Report Card */}
       {prevMonthReport && showMonthlyReport && (
         <div className="card animate-fade-in" style={{ 
@@ -380,12 +475,6 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
               <div style={styles.inOutValExpense}>{formatVal(summary.monthlyExpense)}</div>
             </div>
           </div>
-        </div>
-
-        {/* Mini stats for savings */}
-        <div style={styles.savingsRow}>
-          <span style={styles.savingsLabel}>Ahorro destinado este mes:</span>
-          <span style={styles.savingsVal}>{formatVal(summary.monthlySavings)}</span>
         </div>
       </div>
 
