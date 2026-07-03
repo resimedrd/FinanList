@@ -665,7 +665,12 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
       <div>
         <div style={styles.sectionTitleRow}>
           <h3>Movimientos Recientes</h3>
-          <span style={styles.sectionTitleLink}>Ver todos</span>
+          <span 
+            onClick={() => setActiveTab('history')} 
+            style={{ ...styles.sectionTitleLink, cursor: 'pointer' }}
+          >
+            Ver todos
+          </span>
         </div>
 
         {recentTransactions.length > 0 ? (
