@@ -31,23 +31,24 @@ export class StatsService {
     transactions.forEach(tx => {
       const val = tx.amount;
       const isCurrentMonth = dateFilter ? dateFilter(tx.date) : (this.getYearMonth(tx.date) === currentYM);
+      const isInvestmentAcc = tx.account === 'Broker' || tx.account === 'Inversiones';
 
       if (tx.type === 'income') {
-        totalBalance += val;
-        if (isCurrentMonth) monthlyIncome += val;
-        if (tx.account !== 'Broker' && tx.account !== 'Inversiones') {
+        if (!isInvestmentAcc) {
+          totalBalance += val;
           availableCash += val;
+          if (isCurrentMonth) monthlyIncome += val;
         }
       } else {
-        totalBalance -= val;
-        if (isCurrentMonth) {
-          monthlyExpense += val;
-          if (tx.categoryId === 'cat_saving') {
-            monthlySavings += val;
-          }
-        }
-        if (tx.account !== 'Broker' && tx.account !== 'Inversiones') {
+        if (!isInvestmentAcc) {
+          totalBalance -= val;
           availableCash -= val;
+          if (isCurrentMonth) {
+            monthlyExpense += val;
+            if (tx.categoryId === 'cat_saving') {
+              monthlySavings += val;
+            }
+          }
         }
       }
     });

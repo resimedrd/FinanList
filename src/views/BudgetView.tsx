@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { DynamicIcon } from '../components/DynamicIcon';
-import { Budget, SavingGoal, Debt } from '../models/types';
+import { Budget, SavingGoal, Debt, Transaction } from '../models/types';
 
+interface BudgetViewProps {
+  onOpenTransactionModal: (editTx?: Transaction, defaultType?: 'income' | 'expense') => void;
+}
 
-
-export const BudgetView: React.FC = () => {
+export const BudgetView: React.FC<BudgetViewProps> = ({ onOpenTransactionModal }) => {
   const {
     budgets,
     goals,
@@ -29,7 +31,7 @@ export const BudgetView: React.FC = () => {
   } = useApp();
 
 
-  const [activeSegment, setActiveSegment] = useState<'budgets' | 'goals' | 'debts'>('budgets');
+  const [activeSegment, setActiveSegment] = useState<'budgets' | 'goals' | 'debts' | 'investments'>('budgets');
 
   // Calculate total savings allocated this month
   const getMonthlySavingsAllocated = () => {
@@ -40,6 +42,48 @@ export const BudgetView: React.FC = () => {
       .reduce((sum, tx) => sum + tx.amount, 0);
   };
   const monthlySavingsAllocated = getMonthlySavingsAllocated();
+  
+  // Calculate investments portfolio metrics
+  const getInvestmentMetrics = () => {
+    let currentVal = 0;
+    
+    // Calculate current value (deposits + yields - withdrawals in Inversiones account)
+    transactions.forEach(tx => {
+      const acc = tx.account ? tx.account.trim().toLowerCase() : '';
+      if (acc.includes('broker') || acc.includes('inversiones')) {
+        const amt = tx.amount;
+        if (tx.type === 'income') {
+          currentVal += amt;
+        } else {
+          currentVal -= amt;
+        }
+      }
+    });
+
+    // Calculate invested capital (expenses from liquid cash with category cat_inv)
+    const capitalAportado = transactions
+      .filter(tx => tx.type === 'expense' && 
+                    tx.categoryId === 'cat_inv' && 
+                    !(tx.account ? tx.account.trim().toLowerCase() : '').includes('broker') &&
+                    !(tx.account ? tx.account.trim().toLowerCase() : '').includes('inversiones'))
+      .reduce((sum, tx) => sum + tx.amount, 0);
+
+    const yieldNeto = currentVal - capitalAportado;
+    const yieldPct = capitalAportado > 0 ? (yieldNeto / capitalAportado) * 100 : 0;
+
+    return { currentVal, capitalAportado, yieldNeto, yieldPct };
+  };
+  const { currentVal: invCurrentVal, capitalAportado: invCapitalAportado, yieldNeto: invYieldNeto, yieldPct: invYieldPct } = getInvestmentMetrics();
+
+  // Get all investment-related transactions
+  const investmentTransactions = React.useMemo(() => {
+    return transactions.filter(tx => {
+      const acc = tx.account ? tx.account.trim().toLowerCase() : '';
+      const isInvAcc = acc.includes('broker') || acc.includes('inversiones');
+      const isInvCat = tx.categoryId === 'cat_inv';
+      return isInvAcc || isInvCat;
+    }).sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
+  }, [transactions]);
   
   // Modals state
   const [showAddBudget, setShowAddBudget] = useState<boolean>(false);
@@ -723,6 +767,17 @@ export const BudgetView: React.FC = () => {
         >
           Deudas
         </button>
+        <button
+          onClick={() => setActiveSegment('investments')}
+          style={{
+            ...styles.segmentBtn,
+            backgroundColor: activeSegment === 'investments' ? 'var(--bg-phone)' : 'transparent',
+            color: activeSegment === 'investments' ? 'var(--color-primary)' : 'var(--text-secondary)',
+            fontWeight: activeSegment === 'investments' ? '700' : '500',
+          }}
+        >
+          Inversiones
+        </button>
       </div>
 
       {/* --- BUDGETS SEGMENT --- */}
@@ -1171,6 +1226,158 @@ export const BudgetView: React.FC = () => {
               <DynamicIcon name="Coins" size={32} className="empty-state-icon" />
               <p>No tienes deudas ni préstamos activos registrados.</p>
               <p className="empty-state-quote">"El que paga lo que debe, sana su paz mental."</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeSegment === 'investments' && (
+        <div style={styles.listContainer}>
+          {/* Action button to open transaction modal */}
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => onOpenTransactionModal(undefined, 'expense')} 
+            style={styles.addBtn}
+          >
+            <DynamicIcon name="Plus" size={16} />
+            <span>Registrar Movimiento de Inversión</span>
+          </button>
+
+          {/* Investment KPI Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+            <div className="card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>Valor del Portafolio</span>
+              <h2 style={{ fontSize: '18px', fontWeight: '800', fontFamily: 'var(--font-display)', margin: 0, color: 'var(--text-primary)' }}>
+                {stealthMode ? '••••' : `${profile.currency}${invCurrentVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              </h2>
+            </div>
+            
+            <div className="card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>Capital Aportado</span>
+              <h2 style={{ fontSize: '18px', fontWeight: '800', fontFamily: 'var(--font-display)', margin: 0, color: 'var(--text-primary)' }}>
+                {stealthMode ? '••••' : `${profile.currency}${invCapitalAportado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              </h2>
+            </div>
+          </div>
+
+          {/* Yield Yield Card */}
+          <div className="card" style={{ 
+            padding: '12px 16px', 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            borderLeft: '4px solid ' + (invYieldNeto >= 0 ? 'var(--color-success)' : 'var(--color-danger)'),
+            marginBottom: '16px'
+          }}>
+            <div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>Rendimiento Neto</span>
+              <h3 style={{ 
+                fontSize: '18px', 
+                fontWeight: '800', 
+                fontFamily: 'var(--font-display)', 
+                margin: '2px 0 0 0',
+                color: invYieldNeto >= 0 ? 'var(--color-success)' : 'var(--color-danger)'
+              }}>
+                {invYieldNeto >= 0 ? '+' : ''}{stealthMode ? '••••' : `${profile.currency}${invYieldNeto.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              </h3>
+            </div>
+            <div style={{ 
+              backgroundColor: invYieldNeto >= 0 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              color: invYieldNeto >= 0 ? 'var(--color-success)' : 'var(--color-danger)',
+              fontWeight: '800',
+              fontSize: '14px'
+            }}>
+              {invYieldNeto >= 0 ? '+' : ''}{invYieldPct.toFixed(1)}%
+            </div>
+          </div>
+
+          {/* Investment Instructions Card */}
+          <div className="card" style={{ 
+            backgroundColor: 'var(--bg-input)', 
+            border: '1px solid var(--border-color)', 
+            padding: '12px', 
+            borderRadius: '12px', 
+            marginBottom: '16px',
+            fontSize: '11px',
+            color: 'var(--text-secondary)',
+            lineHeight: '1.4'
+          }}>
+            <div style={{ fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+              <DynamicIcon name="Lightbulb" size={14} color="var(--color-primary)" />
+              <span>¿Cómo funciona el registro de Inversiones?</span>
+            </div>
+            <ul style={{ margin: 0, paddingLeft: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <li><b>Aportar Capital:</b> Registra un Gasto desde tu cuenta líquida (ej: Banco) con categoría <i>Inversiones</i>. Esto reduce tu saldo líquido general.</li>
+              <li><b>Registrar Ganancia/Rendimiento:</b> Registra un Ingreso con cuenta <i>Inversiones</i> y categoría <i>Inversiones</i>. Esto aumenta el valor de tu inversión sin afectar tu saldo líquido de Inicio.</li>
+              <li><b>Retirar Fondos:</b> Registra un Ingreso en tu cuenta líquida (ej: Banco) y un Gasto de igual monto en la cuenta <i>Inversiones</i>.</li>
+            </ul>
+          </div>
+
+          {/* Exclusive Investment Ledger */}
+          <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>
+            Historial de Inversiones
+          </h3>
+          {investmentTransactions.length > 0 ? (
+            <div className="tx-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {investmentTransactions.map((tx) => {
+                const isInvAcc = (tx.account || '').trim().toLowerCase().includes('inversiones');
+                const isIncome = tx.type === 'income';
+                
+                // Determine transaction context label
+                let typeLabel = '';
+                if (isInvAcc && isIncome) typeLabel = 'Rendimiento';
+                else if (isInvAcc && !isIncome) typeLabel = 'Retiro / Pérdida';
+                else if (!isInvAcc && !isIncome) typeLabel = 'Aportación';
+                else typeLabel = 'Movimiento';
+
+                return (
+                  <div key={tx.id} className="card" style={{ padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ 
+                        width: '32px', 
+                        height: '32px', 
+                        borderRadius: '8px', 
+                        backgroundColor: isIncome ? 'rgba(34, 197, 94, 0.12)' : 'rgba(139, 92, 246, 0.12)', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center' 
+                      }}>
+                        <DynamicIcon 
+                          name={isIncome ? 'TrendingUp' : 'ArrowRight'} 
+                          size={16} 
+                          color={isIncome ? 'var(--color-success)' : 'var(--color-primary)'} 
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontWeight: '700', fontSize: '13px', color: 'var(--text-primary)' }}>
+                          {tx.notes || typeLabel}
+                        </span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                          {tx.account} • {tx.date}
+                        </span>
+                      </div>
+                    </div>
+                    <span style={{ 
+                      fontWeight: '700', 
+                      fontSize: '13px', 
+                      color: isIncome ? 'var(--color-success)' : 'var(--text-primary)' 
+                    }}>
+                      {isIncome ? '+' : '-'}{profile.currency}{tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-state card" style={{ padding: '20px', textAlign: 'center' }}>
+              <div style={{ marginBottom: '8px' }}>
+                <DynamicIcon name="TrendingUp" size={24} color="var(--text-muted)" />
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0 }}>
+                Aún no has registrado movimientos de inversión.
+              </p>
             </div>
           )}
         </div>

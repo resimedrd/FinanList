@@ -114,7 +114,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
     return { cash, card, bank, investments };
   };
 
-  const { cash: cashBalance, card: cardBalance, bank: bankBalance, investments: investmentBalance } = getAccountBalances();
+  const { cash: cashBalance, card: cardBalance, bank: bankBalance } = getAccountBalances();
 
   const formatAccountVal = (val: number) => {
     if (stealthMode) return '••••';
@@ -457,12 +457,11 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         </div>
         <h1 style={styles.balanceValue}>{formatVal(summary.totalBalance)}</h1>
 
-        {/* Dinero en Efectivo, Tarjeta, Banco e Inversiones debajo del saldo total */}
+        {/* Dinero en Efectivo, Tarjeta y Banco debajo del saldo total */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '-10px', marginBottom: '2px' }}>
           <span style={styles.availableBadge}>💵 Efectivo: {formatAccountVal(cashBalance)}</span>
           <span style={styles.availableBadge}>💳 Tarjeta: {formatAccountVal(cardBalance)}</span>
           <span style={styles.availableBadge}>🏦 Banco: {formatAccountVal(bankBalance)}</span>
-          <span style={styles.availableBadge}>📈 Inversiones: {formatAccountVal(investmentBalance)}</span>
         </div>
 
         <div style={styles.inOutGrid}>
