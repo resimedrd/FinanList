@@ -1,0 +1,4 @@
+- [x] Mantener el cuadro del gráfico de distribución compacto y del mismo tamaño que antes
+- [x] Diseñar el gráfico y el desglose de categorías en paralelo (side-by-side)
+- [x] Hacer que el panel de categorías con barras de progreso tenga scroll interno y altura fija (145px)
+- [x] Compilar y verificar cambios
