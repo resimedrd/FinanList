@@ -1,3 +1,4 @@
-- [x] Corregir bug de caracteres rotos en el PDF (reemplazar emojis no soportados en jsPDF)
-- [x] Subir y desplegar a GitHub para que Vercel genere PDFs limpios
+- [x] Agregar soporte en `PdfReportService` para recibir mes y fecha de emisión personalizados
+- [x] Diseñar e integrar controles (inputs) en la pestaña Reporte de `StatsView` para elegir mes y fecha/hora
+- [x] Subir y desplegar a GitHub para que Vercel habilite la descarga de reportes personalizados
 - [x] Compilar y verificar cambios

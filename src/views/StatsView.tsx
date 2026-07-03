@@ -107,9 +107,11 @@ export const StatsView: React.FC = () => {
             backgroundColor: activeTab === 'distribution' ? 'var(--bg-phone)' : 'transparent',
             color: activeTab === 'distribution' ? 'var(--color-primary)' : 'var(--text-secondary)',
             fontWeight: activeTab === 'distribution' ? '700' : '500',
+            boxShadow: activeTab === 'distribution' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
           }}
         >
-          Distribución
+          <DynamicIcon name="PieChart" size={14} />
+          <span style={{ marginLeft: '4px' }}>Distribución</span>
         </button>
         <button
           onClick={() => setActiveTab('comparison')}
@@ -118,9 +120,11 @@ export const StatsView: React.FC = () => {
             backgroundColor: activeTab === 'comparison' ? 'var(--bg-phone)' : 'transparent',
             color: activeTab === 'comparison' ? 'var(--color-primary)' : 'var(--text-secondary)',
             fontWeight: activeTab === 'comparison' ? '700' : '500',
+            boxShadow: activeTab === 'comparison' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
           }}
         >
-          Comparación
+          <DynamicIcon name="BarChart2" size={14} />
+          <span style={{ marginLeft: '4px' }}>Comparación</span>
         </button>
         <button
           onClick={() => setActiveTab('flow')}
@@ -129,9 +133,11 @@ export const StatsView: React.FC = () => {
             backgroundColor: activeTab === 'flow' ? 'var(--bg-phone)' : 'transparent',
             color: activeTab === 'flow' ? 'var(--color-primary)' : 'var(--text-secondary)',
             fontWeight: activeTab === 'flow' ? '700' : '500',
+            boxShadow: activeTab === 'flow' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
           }}
         >
-          Tendencias
+          <DynamicIcon name="TrendingUp" size={14} />
+          <span style={{ marginLeft: '4px' }}>Tendencias</span>
         </button>
         <button
           onClick={() => setActiveTab('report')}
@@ -140,9 +146,11 @@ export const StatsView: React.FC = () => {
             backgroundColor: activeTab === 'report' ? 'var(--bg-phone)' : 'transparent',
             color: activeTab === 'report' ? 'var(--color-primary)' : 'var(--text-secondary)',
             fontWeight: activeTab === 'report' ? '700' : '500',
+            boxShadow: activeTab === 'report' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
           }}
         >
-          Reporte PDF
+          <DynamicIcon name="FileText" size={14} />
+          <span style={{ marginLeft: '4px' }}>Reporte PDF</span>
         </button>
       </div>
 
@@ -206,54 +214,117 @@ export const StatsView: React.FC = () => {
         </div>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {insights.map(item => (
-            <div 
-              key={item.id} 
-              style={{ 
-                padding: '8px 12px', 
-                borderRadius: '8px', 
-                backgroundColor: 'var(--bg-input)',
-                border: '1px solid var(--border-color)',
-                fontSize: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}>
-                <DynamicIcon 
-                  name={item.type === 'warning' ? 'AlertTriangle' : item.type === 'success' ? 'CheckCircle' : 'Info'} 
-                  size={14} 
-                  color={item.type === 'warning' ? 'var(--color-danger)' : item.type === 'success' ? 'var(--color-success)' : 'var(--color-primary)'} 
-                />
-                <span style={{ color: item.type === 'warning' ? 'var(--color-danger)' : item.type === 'success' ? 'var(--color-success)' : 'var(--text-primary)' }}>
-                  {item.title}
-                </span>
+          {insights.map(item => {
+            const isWarning = item.type === 'warning';
+            const isSuccess = item.type === 'success';
+            const itemBgColor = isWarning 
+              ? 'rgba(239, 68, 68, 0.05)' 
+              : isSuccess 
+                ? 'rgba(16, 185, 129, 0.05)' 
+                : 'rgba(99, 102, 241, 0.05)';
+            const itemBorderColor = isWarning 
+              ? 'rgba(239, 68, 68, 0.15)' 
+              : isSuccess 
+                ? 'rgba(16, 185, 129, 0.15)' 
+                : 'rgba(99, 102, 241, 0.15)';
+            const iconColor = isWarning 
+              ? 'var(--color-danger)' 
+              : isSuccess 
+                ? 'var(--color-success)' 
+                : 'var(--color-primary)';
+            const iconName = isWarning 
+              ? 'AlertTriangle' 
+              : isSuccess 
+                ? 'CheckCircle' 
+                : 'Info';
+
+            return (
+              <div 
+                key={item.id} 
+                style={{ 
+                  padding: '10px 14px', 
+                  borderRadius: '12px', 
+                  backgroundColor: itemBgColor,
+                  border: `1px solid ${itemBorderColor}`,
+                  fontSize: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                  transition: 'transform 0.2s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}>
+                  <DynamicIcon name={iconName} size={14} color={iconColor} />
+                  <span style={{ color: isWarning ? 'var(--color-danger)' : isSuccess ? 'var(--color-success)' : 'var(--text-primary)' }}>
+                    {item.title}
+                  </span>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', margin: '0', fontSize: '11px', lineHeight: '1.4' }}>{item.message}</p>
               </div>
-              <p style={{ color: 'var(--text-secondary)', margin: '0', fontSize: '11px', lineHeight: '1.4' }}>{item.message}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       {/* --- PROMEDIOS CARD --- */}
-      <div className="card">
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         <div className="card-title">
           <span>Promedios de Gasto Diario</span>
           <DynamicIcon name="LineChart" size={16} />
         </div>
-        <div style={styles.averagesGrid}>
-          <div style={styles.averageItem}>
-            <span style={styles.averageLabel}>Diario</span>
-            <span style={styles.averageValue}>{formatVal(averages.daily)}</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', width: '100%' }}>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            gap: '6px', 
+            padding: '12px 8px', 
+            borderRadius: '12px', 
+            backgroundColor: 'var(--bg-phone)', 
+            border: '1px solid var(--border-color)',
+            textAlign: 'center'
+          }}>
+            <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifySelf: 'center', justifyContent: 'center' }}>
+              <DynamicIcon name="Calendar" size={12} color="var(--color-primary)" />
+            </div>
+            <span style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Diario</span>
+            <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>{formatVal(averages.daily)}</span>
           </div>
-          <div style={{ ...styles.averageItem, borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)' }}>
-            <span style={styles.averageLabel}>Semanal</span>
-            <span style={styles.averageValue}>{formatVal(averages.weekly)}</span>
+
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            gap: '6px', 
+            padding: '12px 8px', 
+            borderRadius: '12px', 
+            backgroundColor: 'var(--bg-phone)', 
+            border: '1px solid var(--border-color)',
+            textAlign: 'center'
+          }}>
+            <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--color-success)', display: 'flex', alignItems: 'center', justifySelf: 'center', justifyContent: 'center' }}>
+              <DynamicIcon name="TrendingUp" size={12} color="var(--color-success)" />
+            </div>
+            <span style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Semanal</span>
+            <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>{formatVal(averages.weekly)}</span>
           </div>
-          <div style={styles.averageItem}>
-            <span style={styles.averageLabel}>Mensual</span>
-            <span style={styles.averageValue}>{formatVal(averages.monthly)}</span>
+
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            gap: '6px', 
+            padding: '12px 8px', 
+            borderRadius: '12px', 
+            backgroundColor: 'var(--bg-phone)', 
+            border: '1px solid var(--border-color)',
+            textAlign: 'center'
+          }}>
+            <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'rgba(6, 182, 212, 0.1)', color: 'var(--color-info)', display: 'flex', alignItems: 'center', justifySelf: 'center', justifyContent: 'center' }}>
+              <DynamicIcon name="FileText" size={12} color="#06b6d4" />
+            </div>
+            <span style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Mensual</span>
+            <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>{formatVal(averages.monthly)}</span>
           </div>
         </div>
       </div>
