@@ -249,6 +249,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
     }
   };
 
+  const handleResetData = () => {
+    if (confirm('¿Estás seguro de que deseas eliminar TODOS los datos de tu cuenta? Esta acción no se puede deshacer.')) {
+      if (confirm('Por favor confirma una última vez. Se borrarán todas tus transacciones, presupuestos, metas, deudas e inversiones.')) {
+        localStorage.removeItem('finanlist_transactions');
+        localStorage.removeItem('finanlist_budgets');
+        localStorage.removeItem('finanlist_goals');
+        localStorage.removeItem('finanlist_debts');
+        localStorage.removeItem('finanlist_recurring');
+        localStorage.removeItem('finanlist_profile');
+        localStorage.removeItem('finanlist_onboarded');
+        window.location.reload();
+      }
+    }
+  };
+
   // Report Exports
   const handleExportCSV = () => ExportImportService.exportToCSV(transactions);
   const handleExportExcel = () => ExportImportService.exportToExcel(transactions);
@@ -471,6 +486,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
             <span>Importar Copia</span>
             <input type="file" accept=".json" onChange={handleImportBackup} style={{ display: 'none' }} />
           </label>
+          <button className="btn btn-secondary" onClick={handleResetData} style={{ ...styles.actionBtn, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
+            <DynamicIcon name="Trash2" size={16} color="#ef4444" />
+            <span>Restablecer Datos</span>
+          </button>
         </div>
       </div>
 
