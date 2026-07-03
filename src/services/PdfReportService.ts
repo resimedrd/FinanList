@@ -348,7 +348,7 @@ export const PdfReportService = {
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(9.5);
       doc.setTextColor(PALETTE.accentRed[0], PALETTE.accentRed[1], PALETTE.accentRed[2]);
-      doc.text('⚠️ Anomalía Detectada', 25, finalTableY + 16);
+      doc.text('Anomalía Detectada', 25, finalTableY + 16);
       doc.setFont('Helvetica', 'normal');
       doc.setTextColor(PALETTE.textMain[0], PALETTE.textMain[1], PALETTE.textMain[2]);
       doc.text(doc.splitTextToSize(anomalyText, 160), 25, 23 + finalTableY);

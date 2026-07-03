@@ -1,5 +1,4 @@
-- [x] Quitar la alerta (tarjeta de consejos financieros) del gráfico de distribución
-- [x] Quitar las barras de progreso del desglose para evitar reducir el tamaño del gráfico
-- [x] Restaurar el tamaño original de la dona (180px de ancho y alto) y la leyenda clásica a los lados (top 3)
-- [x] Mantener el comportamiento interactivo: mostrar el nombre de la categoría y saldo en el centro al posar el dedo
+- [x] Crear botón "Restablecer Datos" en la pestaña Perfil
+- [x] Borrar todas las bases de datos de localStorage al pulsarlo y recargar
+- [x] Subir y desplegar a GitHub para que Vercel se actualice con la app limpia y lista para importar
 - [x] Compilar y verificar cambios
