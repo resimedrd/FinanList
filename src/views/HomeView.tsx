@@ -834,12 +834,11 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
             {/* Account Selector segmented cards */}
             <div className="input-group">
               <label className="input-label">Cuenta de Pago</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '4px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '4px' }}>
                 {[
                   { name: 'Efectivo', icon: 'Banknote' },
                   { name: 'Tarjeta', icon: 'CreditCard' },
-                  { name: 'Banco', icon: 'Building2' },
-                  { name: 'Inversiones', icon: 'TrendingUp' }
+                  { name: 'Banco', icon: 'Building2' }
                 ].map(acc => (
                   <button
                     key={acc.name}

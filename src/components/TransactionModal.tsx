@@ -239,7 +239,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
         <div className="input-group">
           <label className="input-label">Cuenta de Pago</label>
           <div style={styles.horizontalScroll}>
-            {['Efectivo', 'Tarjeta', 'Banco', 'Inversiones'].map(acc => (
+            {['Efectivo', 'Tarjeta', 'Banco'].map(acc => (
               <button
                 key={acc}
                 onClick={() => setAccount(acc)}

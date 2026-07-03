@@ -167,7 +167,7 @@ const MainLayout: React.FC = () => {
       case 'history':
         return <HistoryView onOpenTransactionModal={handleOpenTransactionModal} />;
       case 'budget':
-        return <BudgetView onOpenTransactionModal={handleOpenTransactionModal} />;
+        return <BudgetView />;
       case 'stats':
         return <StatsView />;
       case 'profile':

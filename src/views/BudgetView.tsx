@@ -1,13 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { DynamicIcon } from '../components/DynamicIcon';
-import { Budget, SavingGoal, Debt, Transaction } from '../models/types';
+import { Budget, SavingGoal, Debt } from '../models/types';
 
-interface BudgetViewProps {
-  onOpenTransactionModal: (editTx?: Transaction, defaultType?: 'income' | 'expense') => void;
-}
-
-export const BudgetView: React.FC<BudgetViewProps> = ({ onOpenTransactionModal }) => {
+export const BudgetView: React.FC = () => {
   const {
     budgets,
     goals,
@@ -90,6 +86,22 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ onOpenTransactionModal }
   const [showAddGoal, setShowAddGoal] = useState<boolean>(false);
   const [showAddDebt, setShowAddDebt] = useState<boolean>(false);
 
+  // Investment Registration Modal State
+  const [showAddInvestmentMove, setShowAddInvestmentMove] = useState<boolean>(false);
+  const [invMoveType, setInvMoveType] = useState<'deposit' | 'yield' | 'withdrawal'>('deposit');
+  const [invAmount, setInvAmount] = useState<string>('');
+  const [invLiquidAccount, setInvLiquidAccount] = useState<string>('Tarjeta');
+  const [invNotes, setInvNotes] = useState<string>('');
+  const [invDate, setInvDate] = useState<string>(new Date().toISOString().split('T')[0]);
+
+  React.useEffect(() => {
+    if (showAddInvestmentMove) {
+      if (window.history.state?.modal !== 'investment') {
+        window.history.pushState({ modal: 'investment', tab: 'budget' }, '', '');
+      }
+    }
+  }, [showAddInvestmentMove]);
+
   React.useEffect(() => {
     const handlePopState = () => {
       if (showAddBudget) {
@@ -117,6 +129,12 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ onOpenTransactionModal }
         setDebtDueDate('');
         setDebtNotes('');
         setShowAddDebt(false);
+      }
+      if (showAddInvestmentMove) {
+        setInvAmount('');
+        setInvNotes('');
+        setInvMoveType('deposit');
+        setShowAddInvestmentMove(false);
       }
     };
 
@@ -518,6 +536,112 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ onOpenTransactionModal }
     setDebtNotes('');
     setShowAddDebt(false);
     if (window.history.state?.modal === 'debt') {
+      window.history.back();
+    }
+  };
+
+  const handleCloseInvestmentModal = () => {
+    setInvAmount('');
+    setInvNotes('');
+    setInvMoveType('deposit');
+    setInvDate(new Date().toISOString().split('T')[0]);
+    setShowAddInvestmentMove(false);
+    if (window.history.state?.modal === 'investment') {
+      window.history.back();
+    }
+  };
+
+  const handleSaveInvestmentMove = () => {
+    const amt = parseFloat(invAmount);
+    if (isNaN(amt) || amt <= 0) {
+      alert('Por favor introduce un monto válido.');
+      return;
+    }
+
+    const baseNotes = invNotes.trim();
+
+    if (invMoveType === 'deposit') {
+      // Double entry: expense on liquid account, income on Inversiones account
+      addTransaction({
+        amount: amt,
+        type: 'expense',
+        categoryId: 'cat_inv',
+        account: invLiquidAccount,
+        date: invDate,
+        time: new Date().toTimeString().split(' ')[0].slice(0, 5),
+        notes: baseNotes || 'Aportación a Inversiones',
+        tags: ['inversion', 'aportacion'],
+        favorite: false,
+        color: '#8b5cf6',
+        icon: 'TrendingUp'
+      });
+
+      addTransaction({
+        amount: amt,
+        type: 'income',
+        categoryId: 'cat_inv',
+        account: 'Inversiones',
+        date: invDate,
+        time: new Date().toTimeString().split(' ')[0].slice(0, 5),
+        notes: baseNotes ? `[Aportación] ${baseNotes}` : 'Aportación Recibida',
+        tags: ['inversion', 'portafolio'],
+        favorite: false,
+        color: '#8b5cf6',
+        icon: 'TrendingUp'
+      });
+    } else if (invMoveType === 'yield') {
+      // Single entry: income on Inversiones account
+      addTransaction({
+        amount: amt,
+        type: 'income',
+        categoryId: 'cat_inv',
+        account: 'Inversiones',
+        date: invDate,
+        time: new Date().toTimeString().split(' ')[0].slice(0, 5),
+        notes: baseNotes || 'Rendimiento de Inversiones',
+        tags: ['inversion', 'rendimiento'],
+        favorite: false,
+        color: '#8b5cf6',
+        icon: 'TrendingUp'
+      });
+    } else if (invMoveType === 'withdrawal') {
+      // Double entry: income on liquid account, expense on Inversiones account
+      addTransaction({
+        amount: amt,
+        type: 'income',
+        categoryId: 'cat_inv',
+        account: invLiquidAccount,
+        date: invDate,
+        time: new Date().toTimeString().split(' ')[0].slice(0, 5),
+        notes: baseNotes ? `[Retiro] ${baseNotes}` : 'Retiro de Inversiones',
+        tags: ['inversion', 'retiro'],
+        favorite: false,
+        color: '#8b5cf6',
+        icon: 'TrendingUp'
+      });
+
+      addTransaction({
+        amount: amt,
+        type: 'expense',
+        categoryId: 'cat_inv',
+        account: 'Inversiones',
+        date: invDate,
+        time: new Date().toTimeString().split(' ')[0].slice(0, 5),
+        notes: baseNotes || 'Retiro de Inversiones',
+        tags: ['inversion', 'portafolio'],
+        favorite: false,
+        color: '#8b5cf6',
+        icon: 'TrendingUp'
+      });
+    }
+
+    // Reset & close
+    setInvAmount('');
+    setInvNotes('');
+    setInvMoveType('deposit');
+    setInvDate(new Date().toISOString().split('T')[0]);
+    setShowAddInvestmentMove(false);
+    if (window.history.state?.modal === 'investment') {
       window.history.back();
     }
   };
@@ -1236,7 +1360,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ onOpenTransactionModal }
           {/* Action button to open transaction modal */}
           <button 
             className="btn btn-secondary" 
-            onClick={() => onOpenTransactionModal(undefined, 'expense')} 
+            onClick={() => setShowAddInvestmentMove(true)} 
             style={styles.addBtn}
           >
             <DynamicIcon name="Plus" size={16} />
@@ -1834,8 +1958,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ onOpenTransactionModal }
               {[
                 { name: 'Efectivo', icon: 'Banknote' },
                 { name: 'Tarjeta', icon: 'CreditCard' },
-                { name: 'Banco', icon: 'Building2' },
-                { name: 'Inversiones', icon: 'TrendingUp' }
+                { name: 'Banco', icon: 'Building2' }
               ].map(acc => (
                 <button
                   key={acc.name}
@@ -1952,12 +2075,11 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ onOpenTransactionModal }
             {/* Account Selector segmented cards */}
             <div className="input-group">
               <label className="input-label">Cuenta de Pago</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '4px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '4px' }}>
                 {[
                   { name: 'Efectivo', icon: 'Banknote' },
                   { name: 'Tarjeta', icon: 'CreditCard' },
-                  { name: 'Banco', icon: 'Building2' },
-                  { name: 'Inversiones', icon: 'TrendingUp' }
+                  { name: 'Banco', icon: 'Building2' }
                 ].map(acc => (
                   <button
                     key={acc.name}
@@ -2007,6 +2129,168 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ onOpenTransactionModal }
                 style={{ flex: 1 }}
               >
                 Registrar Gasto
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ADD INVESTMENT MOVE MODAL SHEET --- */}
+      {showAddInvestmentMove && (
+        <div className="modal-overlay open" onClick={handleCloseInvestmentModal} style={{ zIndex: 1000 }}>
+          <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()} style={{ paddingBottom: '90px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="modal-header">
+              <h2>Registrar Movimiento</h2>
+              <button className="modal-close" onClick={handleCloseInvestmentModal}>
+                <DynamicIcon name="X" size={20} />
+              </button>
+            </div>
+
+            {/* Move type segmented selector */}
+            <div className="input-group">
+              <label className="input-label">Tipo de Movimiento</label>
+              <div style={styles.segmentControl}>
+                <button
+                  type="button"
+                  onClick={() => setInvMoveType('deposit')}
+                  style={{
+                    ...styles.segmentBtn,
+                    backgroundColor: invMoveType === 'deposit' ? 'var(--bg-phone)' : 'transparent',
+                    color: invMoveType === 'deposit' ? 'var(--color-primary)' : 'var(--text-secondary)',
+                    fontWeight: invMoveType === 'deposit' ? '700' : '500',
+                  }}
+                >
+                  Aportar Capital
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInvMoveType('yield')}
+                  style={{
+                    ...styles.segmentBtn,
+                    backgroundColor: invMoveType === 'yield' ? 'var(--bg-phone)' : 'transparent',
+                    color: invMoveType === 'yield' ? 'var(--color-primary)' : 'var(--text-secondary)',
+                    fontWeight: invMoveType === 'yield' ? '700' : '500',
+                  }}
+                >
+                  Rendimiento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInvMoveType('withdrawal')}
+                  style={{
+                    ...styles.segmentBtn,
+                    backgroundColor: invMoveType === 'withdrawal' ? 'var(--bg-phone)' : 'transparent',
+                    color: invMoveType === 'withdrawal' ? 'var(--color-primary)' : 'var(--text-secondary)',
+                    fontWeight: invMoveType === 'withdrawal' ? '700' : '500',
+                  }}
+                >
+                  Retirar Fondos
+                </button>
+              </div>
+            </div>
+
+            {/* Amount Input */}
+            <div className="input-group">
+              <label className="input-label">Monto ({profile.currency})</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                className="input-field"
+                placeholder="0.00"
+                value={invAmount}
+                onChange={(e) => setInvAmount(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            {/* Liquid Account Source / Destination Selector */}
+            {invMoveType !== 'yield' && (
+              <div className="input-group">
+                <label className="input-label">
+                  {invMoveType === 'deposit' ? 'Cuenta Origen (Se descuenta de aquí)' : 'Cuenta Destino (Se abona aquí)'}
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '4px' }}>
+                  {[
+                    { name: 'Efectivo', icon: 'Banknote' },
+                    { name: 'Tarjeta', icon: 'CreditCard' },
+                    { name: 'Banco', icon: 'Building2' }
+                  ].map(acc => (
+                    <button
+                      key={acc.name}
+                      type="button"
+                      onClick={() => setInvLiquidAccount(acc.name)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '10px 8px',
+                        borderRadius: '12px',
+                        border: '1px solid',
+                        borderColor: invLiquidAccount === acc.name ? 'var(--color-primary)' : 'var(--border-color)',
+                        backgroundColor: invLiquidAccount === acc.name ? 'var(--color-primary-light)' : 'var(--bg-card)',
+                        color: invLiquidAccount === acc.name ? 'var(--color-primary)' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: invLiquidAccount === acc.name ? '700' : '500',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <DynamicIcon 
+                        name={acc.icon} 
+                        size={14} 
+                        color={invLiquidAccount === acc.name ? 'var(--color-primary)' : 'var(--text-secondary)'} 
+                      />
+                      <span>{acc.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Date Input */}
+            <div className="input-group">
+              <label className="input-label">Fecha</label>
+              <input
+                type="date"
+                className="input-field"
+                value={invDate}
+                onChange={(e) => setInvDate(e.target.value)}
+              />
+            </div>
+
+            {/* Notes Input */}
+            <div className="input-group">
+              <label className="input-label">Notas / Concepto</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder={
+                  invMoveType === 'deposit' ? 'Ej: Aportación a fondo indexado' :
+                  invMoveType === 'yield' ? 'Ej: Interés mensual pagado' :
+                  'Ej: Retiro por emergencia'
+                }
+                value={invNotes}
+                onChange={(e) => setInvNotes(e.target.value)}
+              />
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={handleCloseInvestmentModal}
+                style={{ flex: 1 }}
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={handleSaveInvestmentMove}
+                style={{ flex: 1 }}
+              >
+                Registrar Movimiento
               </button>
             </div>
           </div>
