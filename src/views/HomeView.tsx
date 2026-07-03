@@ -675,29 +675,32 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           <DynamicIcon name="PieChart" size={16} />
         </div>
         {chartData.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={styles.chartLayout}>
               <DonutChart data={chartData} total={summary.monthlyExpense} currency={profile.currency} />
-            </div>
-            
-            {/* Categories breakdown progress bars */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
-              {chartData.map((item) => (
-                <div key={item.categoryId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600', color: 'var(--text-primary)' }}>
-                      <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.color }} />
-                      <span>{item.name}</span>
+              
+              {/* Categories breakdown progress bars inside scrollable legend */}
+              <div style={styles.chartLegendGrid}>
+                {chartData.map((item) => (
+                  <div key={item.categoryId} style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '2px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '600', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '75px' }} title={item.name}>
+                        <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: item.color, flexShrink: 0 }} />
+                        <span>{item.name}</span>
+                      </div>
+                      <div style={{ fontWeight: '700', color: 'var(--text-secondary)', fontSize: '10px' }}>
+                        {item.percentage.toFixed(0)}%
+                      </div>
                     </div>
-                    <div style={{ fontWeight: '700', color: 'var(--text-secondary)' }}>
-                      {formatVal(item.amount)} <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500' }}>({item.percentage.toFixed(0)}%)</span>
+                    <div style={{ width: '100%', height: '4px', backgroundColor: 'var(--bg-phone)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${item.percentage}%`, height: '100%', backgroundColor: item.color, borderRadius: '2px' }} />
+                    </div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', alignSelf: 'flex-end', marginTop: '-2px' }}>
+                      {formatVal(item.amount)}
                     </div>
                   </div>
-                  <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--bg-phone)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ width: `${item.percentage}%`, height: '100%', backgroundColor: item.color, borderRadius: '3px' }} />
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
             {/* Financial Insight Tip Card */}
@@ -705,7 +708,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
               <div style={{ 
                 display: 'flex', 
                 gap: '10px', 
-                padding: '12px', 
+                padding: '10px 12px', 
                 borderRadius: '12px', 
                 backgroundColor: insight.bgColor, 
                 border: '1px solid var(--border-color)', 
@@ -716,18 +719,18 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center', 
-                  width: '28px', 
-                  height: '28px', 
+                  width: '24px', 
+                  height: '24px', 
                   borderRadius: '50%', 
                   backgroundColor: 'white',
                   boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
                   flexShrink: 0
                 }}>
-                  <DynamicIcon name={insight.icon} size={14} color={insight.color} />
+                  <DynamicIcon name={insight.icon} size={12} color={insight.color} />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span style={{ fontWeight: '700', fontSize: '12px', color: 'var(--text-primary)' }}>{insight.title}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>{insight.text}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <span style={{ fontWeight: '700', fontSize: '11px', color: 'var(--text-primary)' }}>{insight.title}</span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>{insight.text}</span>
                 </div>
               </div>
             )}
@@ -1185,16 +1188,19 @@ const styles: Record<string, React.CSSProperties> = {
   },
   chartLayout: {
     display: 'flex',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: '16px',
+    width: '100%',
   },
   chartLegendGrid: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px',
+    gap: '6px',
     flex: 1,
+    maxHeight: '145px',
+    overflowY: 'auto',
+    paddingRight: '4px',
   },
   legendItem: {
     display: 'flex',
