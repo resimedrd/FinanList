@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 interface DonutChartProps {
   data: Array<{
@@ -14,6 +14,8 @@ interface DonutChartProps {
 }
 
 export const DonutChart: React.FC<DonutChartProps> = ({ data, total, currency }) => {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
   // SVG properties
   const radius = 35;
   const strokeWidth = 8;
@@ -42,6 +44,13 @@ export const DonutChart: React.FC<DonutChartProps> = ({ data, total, currency })
     );
   }
 
+  // Active / Selected info
+  const hasActive = activeIndex !== null && activeIndex < data.length;
+  const displayLabel = hasActive ? data[activeIndex].name : 'Gastos';
+  const displayValue = hasActive ? data[activeIndex].amount : total;
+  const displayPercent = hasActive ? `${data[activeIndex].percentage.toFixed(1)}%` : null;
+  const displayColor = hasActive ? data[activeIndex].color : 'var(--text-secondary)';
+
   return (
     <div style={styles.chartContainer}>
       <svg viewBox="0 0 100 100" style={styles.svg}>
@@ -52,7 +61,8 @@ export const DonutChart: React.FC<DonutChartProps> = ({ data, total, currency })
           r={radius}
           fill="transparent"
           stroke="var(--border-color)"
-          strokeWidth={strokeWidth - 1}
+          strokeWidth={strokeWidth - 2}
+          style={{ opacity: 0.3 }}
         />
         
         {/* Data Segments */}
@@ -61,6 +71,8 @@ export const DonutChart: React.FC<DonutChartProps> = ({ data, total, currency })
           const dashOffset = circumference - (accumulatedPercentage / 100) * circumference;
           accumulatedPercentage += item.percentage;
           
+          const isSelected = activeIndex === idx;
+
           return (
             <circle
               key={item.categoryId || idx}
@@ -69,11 +81,18 @@ export const DonutChart: React.FC<DonutChartProps> = ({ data, total, currency })
               r={radius}
               fill="transparent"
               stroke={item.color}
-              strokeWidth={strokeWidth}
+              strokeWidth={isSelected ? strokeWidth + 2.5 : strokeWidth}
               strokeDasharray={dashArray}
               strokeDashoffset={dashOffset}
               transform="rotate(-90 50 50)"
-              style={styles.circleSegment}
+              onClick={() => setActiveIndex(isSelected ? null : idx)}
+              onMouseEnter={() => setActiveIndex(idx)}
+              onMouseLeave={() => setActiveIndex(null)}
+              style={{
+                ...styles.circleSegment,
+                cursor: 'pointer',
+                opacity: activeIndex === null || isSelected ? 1 : 0.6,
+              }}
             />
           );
         })}
@@ -81,10 +100,17 @@ export const DonutChart: React.FC<DonutChartProps> = ({ data, total, currency })
 
       {/* Centered balance label */}
       <div style={styles.centerLabel}>
-        <span style={styles.centerTextLabel}>Gastos</span>
-        <span style={styles.centerValue}>
-          {currency}{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        <span style={{ ...styles.centerTextLabel, color: displayColor }}>
+          {displayLabel}
         </span>
+        <span style={styles.centerValue}>
+          {currency}{displayValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+        {displayPercent && (
+          <span style={styles.centerPercentLabel}>
+            {displayPercent}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -102,7 +128,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: '100%',
   },
   circleSegment: {
-    transition: 'stroke-dashoffset 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+    transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
     strokeLinecap: 'round',
   },
   centerLabel: {
@@ -121,17 +147,24 @@ const styles: Record<string, React.CSSProperties> = {
   centerTextLabel: {
     fontSize: '11px',
     fontWeight: '600',
-    color: 'var(--text-secondary)',
     textTransform: 'uppercase',
     letterSpacing: '0.5px',
+    transition: 'color 0.2s ease',
   },
   centerValue: {
-    fontSize: '18px',
+    fontSize: '16px',
     fontWeight: '800',
     fontFamily: 'var(--font-display)',
     color: 'var(--text-primary)',
     marginTop: '2px',
     wordBreak: 'break-all',
   },
+  centerPercentLabel: {
+    fontSize: '11px',
+    fontWeight: '700',
+    color: 'var(--text-secondary)',
+    marginTop: '1px',
+  },
 };
+
 export default DonutChart;

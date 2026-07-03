@@ -300,6 +300,70 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
     }
   };
 
+  const getFinancialInsight = () => {
+    if (chartData.length === 0) return null;
+    const topCat = chartData[0];
+    const pct = topCat.percentage;
+
+    if (topCat.categoryId === 'cat_saving' || topCat.categoryId === 'cat_inv') {
+      return {
+        icon: 'TrendingUp',
+        color: 'var(--color-success)',
+        bgColor: 'var(--color-success-light)',
+        title: '¡Gran enfoque patrimonial!',
+        text: `Estás priorizando el ahorro y la inversión (${pct.toFixed(0)}% de tus salidas). Sigue así para construir tu futuro financiero.`
+      };
+    }
+
+    const catNameLower = topCat.name.toLowerCase();
+    if (catNameLower.includes('comida') || catNameLower.includes('restaurante') || catNameLower.includes('alimento')) {
+      return {
+        icon: 'Utensils',
+        color: '#f59e0b',
+        bgColor: 'rgba(245, 158, 11, 0.1)',
+        title: 'Ojo con los gastos en Comida',
+        text: `Comida es tu mayor categoría de gasto (${pct.toFixed(0)}%). Preparar comida en casa y planificar tus compras del súper podría ahorrarte un buen pellizco.`
+      };
+    }
+    if (catNameLower.includes('transporte') || catNameLower.includes('uber') || catNameLower.includes('gasolina')) {
+      return {
+        icon: 'Car',
+        color: '#3b82f6',
+        bgColor: 'rgba(59, 130, 246, 0.1)',
+        title: 'Optimiza tus traslados',
+        text: `El transporte representa el ${pct.toFixed(0)}% de tus gastos. Revisa si puedes agrupar vueltas o usar alternativas de movilidad más económicas.`
+      };
+    }
+    if (catNameLower.includes('ocio') || catNameLower.includes('entretenimiento') || catNameLower.includes('salidas') || catNameLower.includes('diversión')) {
+      return {
+        icon: 'Sparkles',
+        color: '#8b5cf6',
+        bgColor: 'rgba(139, 92, 246, 0.1)',
+        title: 'Monitorea tus gastos de ocio',
+        text: `El entretenimiento representa el ${pct.toFixed(0)}% de tus salidas. Establecer un límite semanal para diversión evitará compras impulsivas.`
+      };
+    }
+    if (catNameLower.includes('servicios') || catNameLower.includes('luz') || catNameLower.includes('agua') || catNameLower.includes('suscripcion')) {
+      return {
+        icon: 'Receipt',
+        color: '#06b6d4',
+        bgColor: 'rgba(6, 182, 212, 0.1)',
+        title: 'Revisa tus suscripciones',
+        text: `Los servicios se llevan el ${pct.toFixed(0)}% de tus gastos. Haz una limpieza de suscripciones mensuales que ya no uses con frecuencia.`
+      };
+    }
+
+    return {
+      icon: 'Lightbulb',
+      color: 'var(--color-primary)',
+      bgColor: 'var(--color-primary-light)',
+      title: 'Consejo de presupuesto',
+      text: `Tu mayor gasto está en ${topCat.name} (${pct.toFixed(0)}%). Considera asignar un límite estricto a esta categoría en tu presupuesto.`
+    };
+  };
+
+  const insight = getFinancialInsight();
+
   return (
     <>
       <div className="view-content animate-fade-in">
@@ -611,17 +675,62 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           <DynamicIcon name="PieChart" size={16} />
         </div>
         {chartData.length > 0 ? (
-          <div style={styles.chartLayout}>
-            <DonutChart data={chartData} total={summary.monthlyExpense} currency={profile.currency} />
-            <div style={styles.chartLegendGrid}>
-              {chartData.slice(0, 3).map((item) => (
-                <div key={item.categoryId} style={styles.legendItem}>
-                  <span style={{ ...styles.legendDot, backgroundColor: item.color }} />
-                  <span style={styles.legendLabel}>{item.name}</span>
-                  <span style={styles.legendValue}>{item.percentage}%</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0' }}>
+              <DonutChart data={chartData} total={summary.monthlyExpense} currency={profile.currency} />
+            </div>
+            
+            {/* Categories breakdown progress bars */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
+              {chartData.map((item) => (
+                <div key={item.categoryId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600', color: 'var(--text-primary)' }}>
+                      <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.color }} />
+                      <span>{item.name}</span>
+                    </div>
+                    <div style={{ fontWeight: '700', color: 'var(--text-secondary)' }}>
+                      {formatVal(item.amount)} <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500' }}>({item.percentage.toFixed(0)}%)</span>
+                    </div>
+                  </div>
+                  <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--bg-phone)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ width: `${item.percentage}%`, height: '100%', backgroundColor: item.color, borderRadius: '3px' }} />
+                  </div>
                 </div>
               ))}
             </div>
+
+            {/* Financial Insight Tip Card */}
+            {insight && (
+              <div style={{ 
+                display: 'flex', 
+                gap: '10px', 
+                padding: '12px', 
+                borderRadius: '12px', 
+                backgroundColor: insight.bgColor, 
+                border: '1px solid var(--border-color)', 
+                alignItems: 'flex-start',
+                marginTop: '4px'
+              }}>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  width: '28px', 
+                  height: '28px', 
+                  borderRadius: '50%', 
+                  backgroundColor: 'white',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                  flexShrink: 0
+                }}>
+                  <DynamicIcon name={insight.icon} size={14} color={insight.color} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontWeight: '700', fontSize: '12px', color: 'var(--text-primary)' }}>{insight.title}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>{insight.text}</span>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '10px 0' }}>
