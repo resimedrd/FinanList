@@ -1,4 +1,3 @@
-- [x] Crear botón "Restablecer Datos" en la pestaña Perfil
-- [x] Borrar todas las bases de datos de localStorage al pulsarlo y recargar
-- [x] Subir y desplegar a GitHub para que Vercel se actualice con la app limpia y lista para importar
+- [x] Corregir bug de caracteres rotos en el PDF (reemplazar emojis no soportados en jsPDF)
+- [x] Subir y desplegar a GitHub para que Vercel genere PDFs limpios
 - [x] Compilar y verificar cambios

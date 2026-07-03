@@ -14,19 +14,57 @@ export const PdfReportService = {
     debts: Debt[],
     categories: Category[],
     profile: { name: string; currency: string },
-    stealthMode: boolean
+    stealthMode: boolean,
+    selectedPeriodYM?: string,
+    selectedEmissionDate?: string
   ): jsPDF => {
-    // 1. Determine report period (previous month)
-    const now = new Date();
-    let prevMonthNum = now.getMonth() - 1; // 0-indexed previous month
-    let prevYear = now.getFullYear();
-    if (prevMonthNum < 0) {
-      prevMonthNum = 11;
-      prevYear -= 1;
+    // 1. Determine report period
+    let periodName = '';
+    let currentYM = '';
+    
+    if (selectedPeriodYM) {
+      const [yearStr, monthStr] = selectedPeriodYM.split('-');
+      const targetYear = parseInt(yearStr);
+      const targetMonthNum = parseInt(monthStr) - 1;
+      const monthName = new Date(targetYear, targetMonthNum, 1).toLocaleString('es-ES', { month: 'long' });
+      periodName = `${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${targetYear}`;
+      currentYM = selectedPeriodYM;
+    } else {
+      const now = new Date();
+      let prevMonthNum = now.getMonth() - 1;
+      let prevYear = now.getFullYear();
+      if (prevMonthNum < 0) {
+        prevMonthNum = 11;
+        prevYear -= 1;
+      }
+      const prevMonthName = new Date(prevYear, prevMonthNum, 1).toLocaleString('es-ES', { month: 'long' });
+      periodName = `${prevMonthName.charAt(0).toUpperCase() + prevMonthName.slice(1)} ${prevYear}`;
+      currentYM = `${prevYear}-${String(prevMonthNum + 1).padStart(2, '0')}`;
     }
-    const prevMonthName = new Date(prevYear, prevMonthNum, 1).toLocaleString('es-ES', { month: 'long' });
-    const periodName = `${prevMonthName.charAt(0).toUpperCase() + prevMonthName.slice(1)} ${prevYear}`;
-    const currentYM = `${prevYear}-${String(prevMonthNum + 1).padStart(2, '0')}`;
+
+    // Determine emission timestamp string
+    let emissionStr = '';
+    if (selectedEmissionDate) {
+      const d = new Date(selectedEmissionDate);
+      if (!isNaN(d.getTime())) {
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        const hour = String(d.getHours()).padStart(2, '0');
+        const min = String(d.getMinutes()).padStart(2, '0');
+        emissionStr = `${day}/${month}/${year} ${hour}:${min}`;
+      } else {
+        emissionStr = new Date().toLocaleDateString('es-ES');
+      }
+    } else {
+      const d = new Date();
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const hour = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      emissionStr = `${day}/${month}/${year} ${hour}:${min}`;
+    }
 
     // 2. Filter previous month's data
     const prevTxs = transactions.filter(t => t.date.substring(0, 7) === currentYM);
@@ -220,7 +258,7 @@ export const PdfReportService = {
     doc.text(`Cliente: ${profile.name}`, 35, 182);
     doc.text(`Periodo Analizado: ${periodName}`, 35, 192);
     doc.text(`Moneda Principal: ${profile.currency}`, 35, 202);
-    doc.text(`Emisión: ${new Date().toLocaleDateString('es-ES')}`, 35, 212);
+    doc.text(`Emisión: ${emissionStr}`, 35, 212);
 
     // ==========================================
     // PÁGINA 2: RESUMEN EJECUTIVO Y KPIS

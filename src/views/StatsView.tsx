@@ -19,16 +19,32 @@ export const StatsView: React.FC = () => {
   const cashFlowTrend = StatsService.getCashFlowTrends(transactions);
   const insights = StatsService.getFinancialInsights(transactions, budgets, profile.currency);
 
+  const getPrevMonthYM = () => {
+    const now = new Date();
+    let m = now.getMonth() - 1;
+    let y = now.getFullYear();
+    if (m < 0) {
+      m = 11;
+      y -= 1;
+    }
+    return `${y}-${String(m + 1).padStart(2, '0')}`;
+  };
+
+  const getCurrentDateTimeLocal = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const h = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${d}T${h}:${min}`;
+  };
+
+  const [reportPeriod, setReportPeriod] = useState<string>(getPrevMonthYM());
+  const [reportEmission, setReportEmission] = useState<string>(getCurrentDateTimeLocal());
+
   const handleDownloadPdf = () => {
     try {
-      const now = new Date();
-      let prevM = now.getMonth() - 1;
-      let prevY = now.getFullYear();
-      if (prevM < 0) {
-        prevM = 11;
-        prevY -= 1;
-      }
-      const prevYM = `${prevY}-${String(prevM + 1).padStart(2, '0')}`;
       const doc = PdfReportService.generateMonthlyReport(
         transactions,
         budgets,
@@ -36,9 +52,11 @@ export const StatsView: React.FC = () => {
         debts,
         categories,
         profile,
-        stealthMode
+        stealthMode,
+        reportPeriod,
+        reportEmission
       );
-      doc.save(`FinanList_Reporte_${prevYM}.pdf`);
+      doc.save(`FinanList_Reporte_${reportPeriod}.pdf`);
       alert('Reporte PDF de salud financiera descargado con éxito.');
     } catch (err) {
       console.error(err);
@@ -303,10 +321,51 @@ export const StatsView: React.FC = () => {
               </p>
             </div>
 
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' }}>
+                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)' }}>Mes a Analizar</label>
+                <input 
+                  type="month" 
+                  value={reportPeriod} 
+                  onChange={(e) => setReportPeriod(e.target.value)} 
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-input)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '13px',
+                    width: '100%',
+                    boxSizing: 'border-box'
+                  }} 
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' }}>
+                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)' }}>Fecha y Hora de Emisión</label>
+                <input 
+                  type="datetime-local" 
+                  value={reportEmission} 
+                  onChange={(e) => setReportEmission(e.target.value)} 
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-input)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '13px',
+                    width: '100%',
+                    boxSizing: 'border-box'
+                  }} 
+                />
+              </div>
+            </div>
+
             <button 
               onClick={handleDownloadPdf}
               className="btn btn-primary"
-              style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '10px' }}
+              style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '14px', width: '100%', maxWidth: '300px' }}
             >
               <DynamicIcon name="Download" size={16} />
               <span>Generar y Descargar PDF</span>
@@ -320,9 +379,10 @@ export const StatsView: React.FC = () => {
               padding: '10px', 
               borderRadius: '8px', 
               border: '1px solid var(--border-color)',
-              marginTop: '10px'
+              marginTop: '10px',
+              maxWidth: '300px'
             }}>
-              💡 <b>Nota:</b> El informe analizará de forma automática los datos del <b>mes natural anterior</b> para cerrar el ciclo financiero.
+              💡 <b>Nota:</b> Selecciona el mes de análisis y el momento de emisión del informe antes de descargarlo.
             </div>
           </div>
         )}
