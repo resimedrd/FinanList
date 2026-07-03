@@ -243,7 +243,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
           <div style={styles.filterItem}>
             <span style={styles.filterLabel}>Cuenta de Pago</span>
             <div style={styles.filterOptions}>
-              {['all', 'Efectivo', 'Tarjeta', 'Banco', 'Broker'].map(a => (
+              {['all', 'Efectivo', 'Tarjeta', 'Banco', 'Inversiones'].map(a => (
                 <button
                   key={a}
                   onClick={() => setSelectedAccount(a)}

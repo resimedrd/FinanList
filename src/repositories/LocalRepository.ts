@@ -141,7 +141,7 @@ const DEFAULT_TRANSACTIONS: Transaction[] = [
     amount: 150,
     type: 'income',
     categoryId: 'cat_inv',
-    account: 'Broker',
+    account: 'Inversiones',
     date: '2026-06-20',
     time: '10:00',
     notes: 'Dividendos acciones',

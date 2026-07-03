@@ -19,7 +19,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [selectedCatId, setSelectedCatId] = useState<string>('');
   const [selectedSubCatId, setSelectedSubCatId] = useState<string>('');
-  const [account, setAccount] = useState<string>('Efectivo');
+  const [account, setAccount] = useState<string>('Tarjeta');
   const [date, setDate] = useState<string>('');
   const [time, setTime] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -82,7 +82,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
         setType(defaultType || 'expense');
         setSelectedCatId('');
         setSelectedSubCatId('');
-        setAccount('Efectivo');
+        setAccount('Tarjeta');
         
         const now = new Date();
         setDate(now.toISOString().split('T')[0]);
@@ -239,7 +239,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
         <div className="input-group">
           <label className="input-label">Cuenta de Pago</label>
           <div style={styles.horizontalScroll}>
-            {['Efectivo', 'Tarjeta', 'Banco', 'Broker'].map(acc => (
+            {['Efectivo', 'Tarjeta', 'Banco', 'Inversiones'].map(acc => (
               <button
                 key={acc}
                 onClick={() => setAccount(acc)}

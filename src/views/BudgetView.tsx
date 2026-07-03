@@ -123,7 +123,7 @@ export const BudgetView: React.FC = () => {
   const [quickExpenseAmount, setQuickExpenseAmount] = useState<string>('');
   const [quickExpenseNotes, setQuickExpenseNotes] = useState<string>('');
   const [quickExpenseIsEmergency, setQuickExpenseIsEmergency] = useState<boolean>(false);
-  const [quickExpenseAccount, setQuickExpenseAccount] = useState<string>('Efectivo');
+  const [quickExpenseAccount, setQuickExpenseAccount] = useState<string>('Tarjeta');
 
   // Inline Category Creation State
   const [showInlineAddCategory, setShowInlineAddCategory] = useState<boolean>(false);
@@ -302,7 +302,7 @@ export const BudgetView: React.FC = () => {
     setQuickExpenseAmount('');
     setQuickExpenseNotes('');
     setQuickExpenseIsEmergency(false);
-    setQuickExpenseAccount('Efectivo');
+    setQuickExpenseAccount('Tarjeta');
     setShowQuickExpenseModal(true);
   };
 
@@ -1628,7 +1628,7 @@ export const BudgetView: React.FC = () => {
                 { name: 'Efectivo', icon: 'Banknote' },
                 { name: 'Tarjeta', icon: 'CreditCard' },
                 { name: 'Banco', icon: 'Building2' },
-                { name: 'Broker', icon: 'TrendingUp' }
+                { name: 'Inversiones', icon: 'TrendingUp' }
               ].map(acc => (
                 <button
                   key={acc.name}
@@ -1750,7 +1750,7 @@ export const BudgetView: React.FC = () => {
                   { name: 'Efectivo', icon: 'Banknote' },
                   { name: 'Tarjeta', icon: 'CreditCard' },
                   { name: 'Banco', icon: 'Building2' },
-                  { name: 'Broker', icon: 'TrendingUp' }
+                  { name: 'Inversiones', icon: 'TrendingUp' }
                 ].map(acc => (
                   <button
                     key={acc.name}

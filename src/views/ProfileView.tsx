@@ -831,7 +831,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
                   <option value="Efectivo">Efectivo</option>
                   <option value="Tarjeta">Tarjeta</option>
                   <option value="Banco">Banco</option>
-                  <option value="Broker">Broker</option>
+                  <option value="Inversiones">Inversiones</option>
                 </select>
               </div>
             </div>

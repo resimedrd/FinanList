@@ -72,7 +72,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
   const [quickExpenseAmount, setQuickExpenseAmount] = React.useState<string>('');
   const [quickExpenseNotes, setQuickExpenseNotes] = React.useState<string>('');
   const [quickExpenseIsEmergency, setQuickExpenseIsEmergency] = React.useState<boolean>(false);
-  const [quickExpenseAccount, setQuickExpenseAccount] = React.useState<string>('Efectivo');
+  const [quickExpenseAccount, setQuickExpenseAccount] = React.useState<string>('Tarjeta');
 
   // Get daily/weekly random quote based on day
   const quoteIdx = new Date().getDate() % FINANCE_QUOTES.length;
@@ -87,10 +87,12 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
     return `${profile.currency}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // Get cash and card balances
+  // Get cash, card, bank, and investments balances
   const getAccountBalances = () => {
     let cash = 0;
     let card = 0;
+    let bank = 0;
+    let investments = 0;
     transactions.forEach(tx => {
       const amt = tx.amount;
       const isExpense = tx.type === 'expense';
@@ -101,12 +103,18 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
       } else if (acc.includes('tarjeta')) {
         if (isExpense) card -= amt;
         else card += amt;
+      } else if (acc.includes('banco')) {
+        if (isExpense) bank -= amt;
+        else bank += amt;
+      } else if (acc.includes('broker') || acc.includes('inversiones')) {
+        if (isExpense) investments -= amt;
+        else investments += amt;
       }
     });
-    return { cash, card };
+    return { cash, card, bank, investments };
   };
 
-  const { cash: cashBalance, card: cardBalance } = getAccountBalances();
+  const { cash: cashBalance, card: cardBalance, bank: bankBalance, investments: investmentBalance } = getAccountBalances();
 
   const formatAccountVal = (val: number) => {
     if (stealthMode) return '••••';
@@ -236,7 +244,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
     setQuickExpenseAmount('');
     setQuickExpenseNotes('');
     setQuickExpenseIsEmergency(false);
-    setQuickExpenseAccount('Efectivo');
+    setQuickExpenseAccount('Tarjeta');
     setShowQuickExpenseModal(true);
   };
 
@@ -449,10 +457,12 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         </div>
         <h1 style={styles.balanceValue}>{formatVal(summary.totalBalance)}</h1>
 
-        {/* Dinero en Efectivo y Tarjeta debajo del saldo total */}
+        {/* Dinero en Efectivo, Tarjeta, Banco e Inversiones debajo del saldo total */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '-10px', marginBottom: '2px' }}>
           <span style={styles.availableBadge}>💵 Efectivo: {formatAccountVal(cashBalance)}</span>
           <span style={styles.availableBadge}>💳 Tarjeta: {formatAccountVal(cardBalance)}</span>
+          <span style={styles.availableBadge}>🏦 Banco: {formatAccountVal(bankBalance)}</span>
+          <span style={styles.availableBadge}>📈 Inversiones: {formatAccountVal(investmentBalance)}</span>
         </div>
 
         <div style={styles.inOutGrid}>
@@ -475,6 +485,12 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
               <div style={styles.inOutValExpense}>{formatVal(summary.monthlyExpense)}</div>
             </div>
           </div>
+        </div>
+        
+        {/* Mini stats for savings */}
+        <div style={styles.savingsRow}>
+          <span style={styles.savingsLabel}>Ahorro destinado este mes:</span>
+          <span style={styles.savingsVal}>{formatVal(summary.monthlySavings)}</span>
         </div>
       </div>
 
@@ -824,7 +840,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
                   { name: 'Efectivo', icon: 'Banknote' },
                   { name: 'Tarjeta', icon: 'CreditCard' },
                   { name: 'Banco', icon: 'Building2' },
-                  { name: 'Broker', icon: 'TrendingUp' }
+                  { name: 'Inversiones', icon: 'TrendingUp' }
                 ].map(acc => (
                   <button
                     key={acc.name}
