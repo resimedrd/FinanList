@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { Transaction, Budget, SavingGoal, Debt, Category } from '../models/types';
 
 export const PdfReportService = {
@@ -153,12 +153,12 @@ export const PdfReportService = {
     });
 
     const PALETTE = {
-      primary: [15, 23, 42],     // #0F172A - Deep Navy
-      secondary: [13, 148, 136], // #0D9488 - Teal
-      accentRed: [225, 29, 72],  // #E11D48 - Coral Red
-      bgLight: [248, 250, 252],  // #F8FAFC - Cool Gray
-      textMain: [51, 65, 85],    // #334155 - Slate Gray
-      divider: [226, 232, 240]   // #E2E8F0 - Light Gray
+      primary: [15, 23, 42] as [number, number, number],     // #0F172A - Deep Navy
+      secondary: [13, 148, 136] as [number, number, number], // #0D9488 - Teal
+      accentRed: [225, 29, 72] as [number, number, number],  // #E11D48 - Coral Red
+      bgLight: [248, 250, 252] as [number, number, number],  // #F8FAFC - Cool Gray
+      textMain: [51, 65, 85] as [number, number, number],    // #334155 - Slate Gray
+      divider: [226, 232, 240] as [number, number, number]   // #E2E8F0 - Light Gray
     };
 
     const addHeaderFooter = (pageNum: number) => {
@@ -304,7 +304,7 @@ export const PdfReportService = {
 
     // Table with jspdf-autotable
     if (budgetBreakdown.length > 0) {
-      (doc as any).autoTable({
+      autoTable(doc, {
         startY: 48,
         margin: { left: 20, right: 20 },
         head: [['Concepto', 'Presupuestado', 'Gasto Real', 'Desviación ($)', 'Desviación (%)']],
@@ -449,7 +449,7 @@ export const PdfReportService = {
       ['Largo Plazo (Este mes)', `[ ] Lograr saldo positivo en tu flujo de caja neto general.`, 'Alta']
     ];
 
-    (doc as any).autoTable({
+    autoTable(doc, {
       startY: 48,
       margin: { left: 20, right: 20 },
       head: [['Plazo', 'Acción Recomendada', 'Prioridad']],
