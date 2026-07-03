@@ -2,22 +2,92 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { StatsService } from '../services/StatsService';
 import { PdfReportService } from '../services/PdfReportService';
-import { DonutChart } from '../components/DonutChart';
 import { IncomeExpenseBarChart, CashFlowLineChart } from '../components/FinancialCharts';
 import { DynamicIcon } from '../components/DynamicIcon';
 
 export const StatsView: React.FC = () => {
   const { transactions, budgets, profile, stealthMode, setStealthMode, goals, debts, categories } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'distribution' | 'comparison' | 'flow' | 'report'>('distribution');
+  const [activeTab, setActiveTab] = useState<'rule' | 'comparison' | 'flow'>('rule');
 
   // Calculations (Month level)
-  const summary = StatsService.getSummary(transactions, budgets);
   const chartData = StatsService.getExpenseByCategory(transactions);
   const monthlyComparisons = StatsService.getIncomeVsExpenseMonthly(transactions);
   const averages = StatsService.getAverages(transactions);
   const cashFlowTrend = StatsService.getCashFlowTrends(transactions);
   const insights = StatsService.getFinancialInsights(transactions, budgets, profile.currency);
+
+  // 50/30/20 Rule Calculator
+  const getBudgetRuleBreakdown = () => {
+    const totalIncome = transactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    let needs = 0;
+    let wants = 0;
+    let savings = 0;
+
+    transactions.forEach(t => {
+      if (t.type === 'expense') {
+        const catId = t.categoryId;
+        if (catId === 'cat_saving' || catId === 'cat_inv') {
+          savings += t.amount;
+        } else if (
+          catId === 'cat_food_super' || 
+          catId === 'cat_services' || 
+          catId === 'cat_rent' || 
+          catId === 'cat_transport'
+        ) {
+          needs += t.amount;
+        } else {
+          wants += t.amount;
+        }
+      }
+    });
+
+    const totalSpent = needs + wants + savings;
+    const needsPct = totalSpent > 0 ? (needs / totalSpent) * 100 : 0;
+    const wantsPct = totalSpent > 0 ? (wants / totalSpent) * 100 : 0;
+    const savingsPct = totalSpent > 0 ? (savings / totalSpent) * 100 : 0;
+
+    let score = 100;
+    let status = 'Distribución Excelente';
+    let recommendation = '¡Felicidades! Estás siguiendo la regla de oro del presupuesto casi a la perfección.';
+
+    if (needsPct > 55) {
+      score -= (needsPct - 50) * 1.5;
+      status = 'Necesidades Elevadas';
+      recommendation = 'Tus gastos fijos y necesidades superan el 50%. Intenta revisar contratos de servicios o buscar formas de abaratar tu costo de vida mensual.';
+    }
+    if (wantsPct > 35) {
+      score -= (wantsPct - 30) * 2;
+      status = 'Exceso en Deseos';
+      recommendation = 'Estás destinando más del 30% a entretenimiento y extras. Intenta recortar salidas a comer o compras no esenciales.';
+    }
+    if (savingsPct < 15) {
+      score -= (20 - savingsPct) * 2.5;
+      if (status === 'Distribución Excelente') status = 'Ahorro Insuficiente';
+      recommendation = 'Tu tasa de ahorro/inversión está por debajo del 20% recomendado. Intenta pagarte a ti mismo primero al recibir tus ingresos.';
+    }
+
+    score = Math.max(10, Math.min(100, Math.round(score)));
+
+    return {
+      needs,
+      wants,
+      savings,
+      needsPct,
+      wantsPct,
+      savingsPct,
+      totalSpent,
+      totalIncome,
+      score,
+      status,
+      recommendation
+    };
+  };
+
+  const rule = getBudgetRuleBreakdown();
 
   const getPrevMonthYM = () => {
     const now = new Date();
@@ -70,8 +140,6 @@ export const StatsView: React.FC = () => {
   };
 
 
-  const totalExpense = summary.monthlyExpense;
-
   // Filter out any income categories for top expense listing
   const topExpenses = chartData.slice(0, 5);
 
@@ -101,17 +169,17 @@ export const StatsView: React.FC = () => {
       {/* Segment switcher */}
       <div style={styles.segmentControl}>
         <button
-          onClick={() => setActiveTab('distribution')}
+          onClick={() => setActiveTab('rule')}
           style={{
             ...styles.segmentBtn,
-            backgroundColor: activeTab === 'distribution' ? 'var(--bg-phone)' : 'transparent',
-            color: activeTab === 'distribution' ? 'var(--color-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'distribution' ? '700' : '500',
-            boxShadow: activeTab === 'distribution' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
+            backgroundColor: activeTab === 'rule' ? 'var(--bg-phone)' : 'transparent',
+            color: activeTab === 'rule' ? 'var(--color-primary)' : 'var(--text-secondary)',
+            fontWeight: activeTab === 'rule' ? '700' : '500',
+            boxShadow: activeTab === 'rule' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
           }}
         >
-          <DynamicIcon name="PieChart" size={14} />
-          <span style={{ marginLeft: '4px' }}>Distribución</span>
+          <DynamicIcon name="Sliders" size={14} />
+          <span style={{ marginLeft: '4px' }}>Fórmula 50/30/20</span>
         </button>
         <button
           onClick={() => setActiveTab('comparison')}
@@ -139,31 +207,101 @@ export const StatsView: React.FC = () => {
           <DynamicIcon name="TrendingUp" size={14} />
           <span style={{ marginLeft: '4px' }}>Tendencias</span>
         </button>
-        <button
-          onClick={() => setActiveTab('report')}
-          style={{
-            ...styles.segmentBtn,
-            backgroundColor: activeTab === 'report' ? 'var(--bg-phone)' : 'transparent',
-            color: activeTab === 'report' ? 'var(--color-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'report' ? '700' : '500',
-            boxShadow: activeTab === 'report' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
-          }}
-        >
-          <DynamicIcon name="FileText" size={14} />
-          <span style={{ marginLeft: '4px' }}>Reporte PDF</span>
-        </button>
       </div>
 
       {/* --- CHART CONTAINERS --- */}
       <div className="card" style={styles.chartCard}>
-        {activeTab === 'distribution' && (
-          <div className="animate-fade-in" style={styles.distributionLayout}>
-            <DonutChart data={chartData} total={totalExpense} currency={profile.currency} />
-            {chartData.length === 0 && (
-              <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                Registra un gasto este mes para ver la distribución.
-              </p>
-            )}
+        {activeTab === 'rule' && (
+          <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h4 style={styles.chartTitle}>Fórmula de Presupuesto 50/30/20</h4>
+            <p style={{ ...styles.chartSubtitle, marginTop: '-6px' }}>
+              Evalúa cómo distribuyes tus gastos frente al estándar ideal de finanzas personales.
+            </p>
+
+            {/* Stacked Progress Bar */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', width: '100%', height: '24px', borderRadius: '12px', overflow: 'hidden', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+                {rule.needsPct > 0 && (
+                  <div style={{ width: `${rule.needsPct}%`, backgroundColor: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '10px', fontWeight: 'bold' }} title={`Necesidades: ${rule.needsPct.toFixed(1)}%`}>
+                    {rule.needsPct >= 10 ? `${rule.needsPct.toFixed(0)}%` : ''}
+                  </div>
+                )}
+                {rule.wantsPct > 0 && (
+                  <div style={{ width: `${rule.wantsPct}%`, backgroundColor: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '10px', fontWeight: 'bold' }} title={`Deseos: ${rule.wantsPct.toFixed(1)}%`}>
+                    {rule.wantsPct >= 10 ? `${rule.wantsPct.toFixed(0)}%` : ''}
+                  </div>
+                )}
+                {rule.savingsPct > 0 && (
+                  <div style={{ width: `${rule.savingsPct}%`, backgroundColor: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '10px', fontWeight: 'bold' }} title={`Ahorros: ${rule.savingsPct.toFixed(1)}%`}>
+                    {rule.savingsPct >= 10 ? `${rule.savingsPct.toFixed(0)}%` : ''}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)', padding: '0 4px' }}>
+                <span>Necesidades (Ideal 50%)</span>
+                <span>Deseos (Ideal 30%)</span>
+                <span>Ahorros/Inversión (Ideal 20%)</span>
+              </div>
+            </div>
+
+            {/* List breakdown of values */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: '12px', backgroundColor: 'var(--bg-phone)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#3b82f6' }} />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>Necesidades</div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-secondary)' }}>Súper, Servicios, Transporte, Renta</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-primary)' }}>{formatVal(rule.needs)}</div>
+                  <div style={{ fontSize: '10px', color: '#3b82f6', fontWeight: '700' }}>{rule.needsPct.toFixed(0)}% de tus gastos</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: '12px', backgroundColor: 'var(--bg-phone)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>Deseos</div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-secondary)' }}>Restaurantes, Ocio, Compras y Extras</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-primary)' }}>{formatVal(rule.wants)}</div>
+                  <div style={{ fontSize: '10px', color: '#f59e0b', fontWeight: '700' }}>{rule.wantsPct.toFixed(0)}% de tus gastos</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: '12px', backgroundColor: 'var(--bg-phone)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>Ahorro e Inversión</div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-secondary)' }}>Metas de Ahorro y Aportes a Portafolio</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-primary)' }}>{formatVal(rule.savings)}</div>
+                  <div style={{ fontSize: '10px', color: '#10b981', fontWeight: '700' }}>{rule.savingsPct.toFixed(0)}% de tus gastos</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Score & Recommendation Card */}
+            <div style={{ display: 'flex', gap: '12px', padding: '12px', borderRadius: '12px', backgroundColor: 'var(--color-primary-light)', border: '1px solid var(--border-color)', marginTop: '8px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'white', border: '2px solid var(--color-primary)', flexShrink: 0 }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '600' }}>Score</span>
+                <span style={{ fontSize: '14px', fontWeight: '800', color: 'var(--color-primary)', fontFamily: 'var(--font-display)', marginTop: '-2px' }}>{rule.score}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-primary)' }}>{rule.status}</span>
+                </div>
+                <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '0', lineHeight: '1.4' }}>{rule.recommendation}</p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -366,97 +504,82 @@ export const StatsView: React.FC = () => {
             <p className="empty-state-quote">"El dinero se multiplica cuando se administra con sabiduría."</p>
           </div>
         )}
+      </div>
 
-        {activeTab === 'report' && (
-          <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '10px 0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', alignSelf: 'center', margin: '10px 0' }}>
-              <div style={{ 
-                width: '48px', 
-                height: '48px', 
-                borderRadius: '12px', 
-                backgroundColor: 'var(--color-primary-light)', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center' 
-              }}>
-                <DynamicIcon name="FileText" size={24} color="var(--color-primary)" />
-              </div>
-            </div>
-            
-            <div style={{ textAlign: 'center' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '6px' }}>
-                Reporte Mensual Inteligente
-              </h3>
-              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4', maxWidth: '300px', margin: '0 auto' }}>
-                Genera un informe detallado en PDF con tus métricas de ahorro, KPIs de salud financiera, desglose de presupuestos y consejos personalizados del asesor.
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' }}>
-                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)' }}>Mes a Analizar</label>
-                <input 
-                  type="month" 
-                  value={reportPeriod} 
-                  onChange={(e) => setReportPeriod(e.target.value)} 
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-input)',
-                    color: 'var(--text-primary)',
-                    fontFamily: 'inherit',
-                    fontSize: '13px',
-                    width: '100%',
-                    boxSizing: 'border-box'
-                  }} 
-                />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' }}>
-                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)' }}>Fecha y Hora de Emisión</label>
-                <input 
-                  type="datetime-local" 
-                  value={reportEmission} 
-                  onChange={(e) => setReportEmission(e.target.value)} 
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-input)',
-                    color: 'var(--text-primary)',
-                    fontFamily: 'inherit',
-                    fontSize: '13px',
-                    width: '100%',
-                    boxSizing: 'border-box'
-                  }} 
-                />
-              </div>
-            </div>
-
-            <button 
-              onClick={handleDownloadPdf}
-              className="btn btn-primary"
-              style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '14px', width: '100%', maxWidth: '300px' }}
-            >
-              <DynamicIcon name="Download" size={16} />
-              <span>Generar y Descargar PDF</span>
-            </button>
-            
-            <div style={{ 
-              fontSize: '11px', 
-              color: 'var(--text-secondary)', 
-              textAlign: 'center', 
-              backgroundColor: 'var(--bg-input)', 
-              padding: '10px', 
-              borderRadius: '8px', 
-              border: '1px solid var(--border-color)',
-              marginTop: '10px',
-              maxWidth: '300px'
-            }}>
-              💡 <b>Nota:</b> Selecciona el mes de análisis y el momento de emisión del informe antes de descargarlo.
-            </div>
+      {/* --- STANDALONE PDF REPORT CARD --- */}
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px', alignItems: 'center', padding: '20px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '4px 0' }}>
+          <div style={{ 
+            width: '44px', 
+            height: '44px', 
+            borderRadius: '12px', 
+            backgroundColor: 'var(--color-primary-light)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center' 
+          }}>
+            <DynamicIcon name="FileText" size={22} color="var(--color-primary)" />
           </div>
-        )}
+        </div>
+        
+        <div style={{ textAlign: 'center' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-primary)', marginBottom: '4px' }}>
+            Reporte Mensual Inteligente
+          </h3>
+          <p style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4', maxWidth: '320px', margin: '0 auto' }}>
+            Genera un informe detallado en PDF con tus métricas de ahorro, KPIs de salud financiera, desglose de presupuestos y consejos del asesor.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px', marginTop: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' }}>
+            <label style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Mes a Analizar</label>
+            <input 
+              type="month" 
+              value={reportPeriod} 
+              onChange={(e) => setReportPeriod(e.target.value)} 
+              style={{
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-input)',
+                color: 'var(--text-primary)',
+                fontFamily: 'inherit',
+                fontSize: '13px',
+                width: '100%',
+                boxSizing: 'border-box'
+              }} 
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' }}>
+            <label style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Fecha y Hora de Emisión</label>
+            <input 
+              type="datetime-local" 
+              value={reportEmission} 
+              onChange={(e) => setReportEmission(e.target.value)} 
+              style={{
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-input)',
+                color: 'var(--text-primary)',
+                fontFamily: 'inherit',
+                fontSize: '13px',
+                width: '100%',
+                boxSizing: 'border-box'
+              }} 
+            />
+          </div>
+        </div>
+
+        <button 
+          onClick={handleDownloadPdf}
+          className="btn btn-primary"
+          style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '10px', width: '100%', maxWidth: '300px' }}
+        >
+          <DynamicIcon name="Download" size={16} />
+          <span>Generar y Descargar PDF</span>
+        </button>
       </div>
     </div>
   );

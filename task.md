@@ -1,4 +1,5 @@
-- [x] Agregar soporte en `PdfReportService` para recibir mes y fecha de emisión personalizados
-- [x] Diseñar e integrar controles (inputs) en la pestaña Reporte de `StatsView` para elegir mes y fecha/hora
-- [x] Subir y desplegar a GitHub para que Vercel habilite la descarga de reportes personalizados
+- [x] Rediseñar el control de pestañas de estadísticas agregando iconos vectoriales a cada botón
+- [x] Cambiar la tarjeta de promedios para que sean 3 tarjetas individuales con fondo suave e iconos de calendario/tendencia
+- [x] Estilizar las tarjetas de consejos/insights con colores de fondo y bordes condicionales según el tipo de alerta (éxito, advertencia, info)
+- [x] Subir y desplegar a GitHub para que Vercel actualice el panel de estadísticas
 - [x] Compilar y verificar cambios
