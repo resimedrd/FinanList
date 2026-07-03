@@ -37,6 +37,20 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
     }
   };
 
+  // State for expanded months (by default, the current month is expanded)
+  const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>(() => {
+    const now = new Date();
+    const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return { [currentYM]: true };
+  });
+
+  const toggleMonth = (key: string) => {
+    setExpandedMonths(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
   // Filter transactions dynamically
   const filteredTxs = transactions.filter(tx => {
     // Search Term match (amount, notes, category name, tags)
@@ -64,6 +78,44 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
 
     return matchesSearch && matchesType && matchesCategory && matchesAccount && matchesFavorites && matchesCalendarDate;
   });
+
+  // Group transactions by month-year YYYY-MM
+  const groupedByMonth = React.useMemo(() => {
+    const groups: Record<string, Transaction[]> = {};
+    
+    // Sort transactions descending by date and time
+    const sortedTxs = [...filteredTxs].sort((a, b) => {
+      const dateCompare = b.date.localeCompare(a.date);
+      if (dateCompare !== 0) return dateCompare;
+      return b.time.localeCompare(a.time);
+    });
+
+    sortedTxs.forEach(tx => {
+      const parts = tx.date.split('-');
+      const year = parts[0];
+      const month = parts[1];
+      if (!year || !month) return;
+      const key = `${year}-${month}`;
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(tx);
+    });
+
+    return Object.keys(groups)
+      .sort((a, b) => b.localeCompare(a))
+      .map(key => {
+        const [year, month] = key.split('-');
+        const date = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
+        const monthName = date.toLocaleString('es-ES', { month: 'long' });
+        const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+        return {
+          key,
+          label: `${capitalizedMonth} ${year}`,
+          transactions: groups[key]
+        };
+      });
+  }, [filteredTxs]);
 
   // Calendar Helpers
   const getDaysInMonth = (date: Date) => {
@@ -309,55 +361,121 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
         </div>
       )}
 
-      {/* Transaction List */}
+      {/* Collapsible Monthly Grouped Transaction List */}
       <div>
-        {filteredTxs.length > 0 ? (
-          <div className="tx-list">
-            {filteredTxs.map((tx) => (
-              <div
-                key={tx.id}
-                className="tx-item"
-                onClick={() => onOpenTransactionModal(tx)}
-              >
-                <div style={{ ...styles.txIconWrapper, backgroundColor: tx.color }}>
-                  <DynamicIcon name={tx.icon} size={20} color="white" />
-                </div>
-                <div className="tx-details">
-                  <div className="tx-title">
-                    {(() => {
-                      const cat = categories.find(c => c.id === tx.categoryId);
-                      if (tx.notes) {
-                        const cleanNotes = tx.notes.replace(/#\w+(:[^\s]+)?/g, '').trim();
-                        if (cleanNotes) return cleanNotes;
-                      }
-                      return cat ? cat.name : tx.categoryId.replace('cat_', '').replace(/^\w/, c => c.toUpperCase());
-                    })()}
-                    {tx.favorite && (
-                      <span style={{ marginLeft: '6px' }}>
-                        <DynamicIcon name="Heart" size={12} color="#f43f5e" />
-                      </span>
-                    )}
-                  </div>
-                  <div className="tx-meta">
-                    <span>{tx.account}</span>
-                    <span>•</span>
-                    <span>{tx.date} {tx.time}</span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div className={`tx-amount ${tx.type}`}>
-                    {tx.type === 'income' ? '+' : '-'}{profile.currency}{tx.amount.toFixed(2)}
-                  </div>
-                  <button
-                    onClick={(e) => handleDeleteTx(tx.id, e)}
-                    style={styles.deleteTxBtn}
-                    title="Eliminar movimiento"
+        {groupedByMonth.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {groupedByMonth.map(group => {
+              const isExpanded = !!expandedMonths[group.key];
+              
+              // Calculate total expenses and income for this month group
+              const totalExp = group.transactions
+                .filter(t => t.type === 'expense')
+                .reduce((sum, t) => sum + t.amount, 0);
+              const totalInc = group.transactions
+                .filter(t => t.type === 'income')
+                .reduce((sum, t) => sum + t.amount, 0);
+
+              const formattedExp = totalExp > 0 ? ` -${profile.currency}${totalExp.toFixed(2)}` : '';
+              const formattedInc = totalInc > 0 ? ` +${profile.currency}${totalInc.toFixed(2)}` : '';
+
+              return (
+                <div key={group.key} className="card" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {/* Collapsible Month Header */}
+                  <div 
+                    onClick={() => toggleMonth(group.key)}
+                    style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center', 
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      paddingBottom: isExpanded ? '8px' : '0',
+                      borderBottom: isExpanded ? '1px solid var(--border-color)' : 'none',
+                      transition: 'all 0.2s ease'
+                    }}
                   >
-                    <DynamicIcon name="Trash2" size={14} color="var(--text-muted)" />
-                  </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <DynamicIcon 
+                        name={isExpanded ? 'ChevronDown' : 'ChevronRight'} 
+                        size={18} 
+                        color="var(--text-muted)" 
+                      />
+                      <span style={{ fontWeight: '700', fontSize: '14px', color: 'var(--text-primary)' }}>
+                        {group.label}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', backgroundColor: 'var(--bg-input)', padding: '2px 6px', borderRadius: '4px' }}>
+                        {group.transactions.length}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '11px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {totalInc > 0 && (
+                        <span style={{ color: 'var(--color-success)', fontWeight: '600' }}>{formattedInc}</span>
+                      )}
+                      {totalExp > 0 && (
+                        <span style={{ color: 'var(--color-danger)', fontWeight: '600' }}>{formattedExp}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Transaction List for this month */}
+                  {isExpanded && (
+                    <div className="tx-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                      {group.transactions.map((tx) => (
+                        <div
+                          key={tx.id}
+                          className="tx-item"
+                          onClick={() => onOpenTransactionModal(tx)}
+                          style={{
+                            padding: '8px 0',
+                            borderBottom: '1px solid rgba(226, 232, 240, 0.05)'
+                          }}
+                        >
+                          <div style={{ ...styles.txIconWrapper, backgroundColor: tx.color, width: '36px', height: '36px', minWidth: '36px' }}>
+                            <DynamicIcon name={tx.icon} size={18} color="white" />
+                          </div>
+                          <div className="tx-details">
+                            <div className="tx-title" style={{ fontSize: '13px', fontWeight: '600' }}>
+                              {(() => {
+                                const cat = categories.find(c => c.id === tx.categoryId);
+                                if (tx.notes) {
+                                  const cleanNotes = tx.notes.replace(/#\w+(:[^\s]+)?/g, '').trim();
+                                  if (cleanNotes) return cleanNotes;
+                                }
+                                return cat ? cat.name : tx.categoryId.replace('cat_', '').replace(/^\w/, c => c.toUpperCase());
+                              })()}
+                              {tx.favorite && (
+                                <span style={{ marginLeft: '6px' }}>
+                                  <DynamicIcon name="Heart" size={11} color="#f43f5e" />
+                                </span>
+                              )}
+                            </div>
+                            <div className="tx-meta" style={{ fontSize: '11px' }}>
+                              <span>{tx.account}</span>
+                              <span>•</span>
+                              <span>{tx.date} {tx.time}</span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div className={`tx-amount ${tx.type}`} style={{ fontSize: '13px', fontWeight: '700' }}>
+                              {tx.type === 'income' ? '+' : '-'}{profile.currency}{tx.amount.toFixed(2)}
+                            </div>
+                            <button
+                              onClick={(e) => handleDeleteTx(tx.id, e)}
+                              style={styles.deleteTxBtn}
+                              title="Eliminar movimiento"
+                            >
+                              <DynamicIcon name="Trash2" size={13} color="var(--text-muted)" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="empty-state card">

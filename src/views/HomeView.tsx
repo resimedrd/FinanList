@@ -590,12 +590,12 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
       </div>
 
       {/* Expense category ring chart */}
-      {chartData.length > 0 && (
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div className="card-title">
-            <span>Distribución de Gastos</span>
-            <DynamicIcon name="PieChart" size={16} />
-          </div>
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="card-title">
+          <span>Distribución de Gastos</span>
+          <DynamicIcon name="PieChart" size={16} />
+        </div>
+        {chartData.length > 0 ? (
           <div style={styles.chartLayout}>
             <DonutChart data={chartData} total={summary.monthlyExpense} currency={profile.currency} />
             <div style={styles.chartLegendGrid}>
@@ -608,8 +608,15 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
               ))}
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '10px 0' }}>
+            <DonutChart data={[]} total={0} currency={profile.currency} />
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
+              Registra un gasto este mes para ver tu distribución.
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Weekly Health Report Card */}
       <div className="card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
