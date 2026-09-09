@@ -1,5 +1,6 @@
-- [x] Rediseñar el control de pestañas de estadísticas agregando iconos vectoriales a cada botón
-- [x] Cambiar la tarjeta de promedios para que sean 3 tarjetas individuales con fondo suave e iconos de calendario/tendencia
-- [x] Estilizar las tarjetas de consejos/insights con colores de fondo y bordes condicionales según el tipo de alerta (éxito, advertencia, info)
-- [x] Subir y desplegar a GitHub para que Vercel actualice el panel de estadísticas
+- [x] Quitar el botón "Reporte PDF" del segment switcher superior para evitar envoltura de pestañas
+- [x] Crear una tarjeta fija y dedicada para el "Reporte PDF" al final de la pantalla de Estadísticas
+- [x] Quitar el gráfico Dona de Estadísticas (duplicado del Inicio)
+- [x] Implementar la pestaña "Fórmula 50/30/20" (Novedad) con barra apilada interactiva, clasificador de gastos, score de presupuesto y consejos
+- [x] Subir y desplegar a GitHub para que Vercel se actualice con el nuevo diseño y análisis 50/30/20
 - [x] Compilar y verificar cambios

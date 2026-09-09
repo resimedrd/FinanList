@@ -12,6 +12,7 @@ import { TransactionModal } from './components/TransactionModal';
 import { DynamicIcon } from './components/DynamicIcon';
 import { Transaction } from './models/types';
 import { WelcomeTour } from './components/WelcomeTour';
+import { InstallPrompt } from './components/InstallPrompt';
 
 const MainLayout: React.FC = () => {
   const { isAuthenticated, activeTab, setActiveTab, isOnboarded, profile, setAuthenticated } = useApp();
@@ -202,6 +203,9 @@ const MainLayout: React.FC = () => {
         editTransaction={editTx}
         defaultType={defaultType}
       />
+
+      {/* PWA Installation Banner & Guide */}
+      <InstallPrompt />
 
       {/* Floating Action Bar (Bottom Navigation) */}
       <nav className="bottom-nav">

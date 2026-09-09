@@ -454,6 +454,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
         </div>
       </div>
 
+      {/* PWA Mobile App Card */}
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <span style={styles.cardTitle}>Aplicación Móvil (PWA)</span>
+        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+          Instala FinanList en tu pantalla de inicio para usarla en pantalla completa como una app nativa y con soporte sin conexión.
+        </p>
+        <button
+          className="btn btn-secondary"
+          onClick={() => window.dispatchEvent(new CustomEvent('trigger-pwa-install'))}
+          style={{ ...styles.actionBtn, width: '100%', borderColor: 'rgba(139, 92, 246, 0.3)' }}
+        >
+          <DynamicIcon name="Smartphone" size={16} color="var(--color-primary, #8b5cf6)" />
+          <span style={{ fontWeight: '600', color: 'var(--color-primary, #8b5cf6)' }}>Instalar o Ver Guía Móvil</span>
+        </button>
+      </div>
+
       {/* Actions (Export Statement) */}
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <span style={styles.cardTitle}>Exportar Estados de Cuenta</span>
