@@ -21,11 +21,12 @@ const FINANCE_QUOTES = [
 
 export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) => {
   const { transactions, budgets, profile, deleteTransaction, addTransaction, categories, setActiveTab, stealthMode, setStealthMode, goals, debts } = useApp();
-  const [showMonthlyReport, setShowMonthlyReport] = React.useState<boolean>(true);
-
-  // Check if previous month's PDF report is ready and not yet downloaded (Day 1 trigger)
-  const getPdfBannerStatus = () => {
+  // Check if monthly budget report should appear automatically (strictly on Day 1 of each month)
+  const getMonthlyBudgetReportStatus = () => {
     const now = new Date();
+    // Only display automatically on Day 1 of the month
+    const isDayOne = now.getDate() === 1;
+
     let prevM = now.getMonth() - 1;
     let prevY = now.getFullYear();
     if (prevM < 0) {
@@ -36,16 +37,35 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
     const prevMonthName = new Date(prevY, prevM, 1).toLocaleString('es-ES', { month: 'long' });
     const capitalizedMonth = prevMonthName.charAt(0).toUpperCase() + prevMonthName.slice(1);
 
-    const lastDownloaded = localStorage.getItem('finanlist_last_pdf_report');
-    const isShowBanner = lastDownloaded !== prevYM;
+    const isDismissedOrDownloaded = localStorage.getItem('finanlist_dismissed_report_' + prevYM) === 'true';
+    const shouldShow = isDayOne && !isDismissedOrDownloaded;
 
-    return { isShowBanner, prevYM, label: `${capitalizedMonth} ${prevY}` };
+    // Calculate previous month's budget data
+    const prevTxs = transactions.filter(t => t.date.substring(0, 7) === prevYM);
+    const prevExpense = prevTxs
+      .filter(t => t.type === 'expense' && t.categoryId !== 'cat_saving')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const prevMonthBudgets = budgets.filter(b => b.type === 'monthly' && b.startDate.substring(0, 7) === prevYM);
+    const totalBudgetLimit = prevMonthBudgets.reduce((sum, b) => sum + b.amount, 0);
+    const leftover = Math.max(0, totalBudgetLimit - prevExpense);
+
+    return {
+      shouldShow,
+      prevYM,
+      label: `${capitalizedMonth} ${prevY}`,
+      monthName: capitalizedMonth,
+      budgetLimit: totalBudgetLimit,
+      spent: prevExpense,
+      leftover,
+      hasBudgets: totalBudgetLimit > 0
+    };
   };
 
-  const pdfBanner = getPdfBannerStatus();
-  const [showPdfBanner, setShowPdfBanner] = React.useState<boolean>(pdfBanner.isShowBanner);
+  const monthlyReportData = getMonthlyBudgetReportStatus();
+  const [showMonthlyBudgetCard, setShowMonthlyBudgetCard] = React.useState<boolean>(monthlyReportData.shouldShow);
 
-  const handleDownloadPdfReport = () => {
+  const handleDownloadMonthlyBudgetReport = () => {
     try {
       const doc = PdfReportService.generateMonthlyReport(
         transactions,
@@ -54,16 +74,22 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         debts,
         categories,
         profile,
-        stealthMode
+        stealthMode,
+        monthlyReportData.prevYM
       );
-      doc.save(`FinanList_Reporte_${pdfBanner.prevYM}.pdf`);
-      localStorage.setItem('finanlist_last_pdf_report', pdfBanner.prevYM);
-      setShowPdfBanner(false);
-      alert('Reporte descargado con éxito.');
+      doc.save(`FinanList_Reporte_${monthlyReportData.prevYM}.pdf`);
+      localStorage.setItem('finanlist_dismissed_report_' + monthlyReportData.prevYM, 'true');
+      setShowMonthlyBudgetCard(false);
+      alert('Reporte mensual de presupuesto descargado con éxito.');
     } catch (err) {
       console.error(err);
       alert('Hubo un error al generar el reporte.');
     }
+  };
+
+  const handleDismissMonthlyBudgetReport = () => {
+    localStorage.setItem('finanlist_dismissed_report_' + monthlyReportData.prevYM, 'true');
+    setShowMonthlyBudgetCard(false);
   };
 
   // Quick Expense Bottom Sheet State
@@ -172,35 +198,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
     };
   };
 
-  const getPreviousMonthReport = () => {
-    const now = new Date();
-    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevYM = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
-    const prevMonthName = prevMonth.toLocaleString('es-ES', { month: 'long' });
-    
-    const prevTxs = transactions.filter(t => t.date.substring(0, 7) === prevYM);
-    if (prevTxs.length === 0) return null;
-    
-    const prevExpense = prevTxs.filter(t => t.type === 'expense' && t.categoryId !== 'cat_saving').reduce((sum, t) => sum + t.amount, 0);
-    
-    // Find previous month's global monthly budget
-    const prevMonthBudgets = budgets.filter(b => b.type === 'monthly' && b.startDate.substring(0, 7) === prevYM);
-    const totalBudgetLimit = prevMonthBudgets.reduce((sum, b) => sum + b.amount, 0);
-    
-    if (totalBudgetLimit === 0) return null;
-    
-    const leftover = Math.max(0, totalBudgetLimit - prevExpense);
-    
-    return {
-      monthName: prevMonthName.charAt(0).toUpperCase() + prevMonthName.slice(1),
-      budgetLimit: totalBudgetLimit,
-      spent: prevExpense,
-      leftover
-    };
-  };
-
   const weeklyReport = getWeeklyReport();
-  const prevMonthReport = getPreviousMonthReport();
 
   // Calculate category usage frequencies from transactions history
   const getUsageFrequency = (categoryId: string) => {
@@ -361,8 +359,8 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         <span style={{ ...styles.quoteText, flex: 1, minWidth: 0 }}>{quoteOfTheDay}</span>
       </div>
 
-      {/* PDF Intelligent Report Notification Banner (Day 1 trigger) */}
-      {showPdfBanner && (
+      {/* Reporte mensual de presupuesto (Solo aparece automáticamente el día 1 de cada mes) */}
+      {showMonthlyBudgetCard && (
         <div className="card animate-fade-in" style={{ 
           display: 'flex', 
           flexDirection: 'column', 
@@ -373,7 +371,8 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           backgroundColor: 'var(--color-primary-light)'
         }}>
           <button 
-            onClick={() => setShowPdfBanner(false)}
+            onClick={handleDismissMonthlyBudgetReport}
+            aria-label="Cerrar reporte"
             style={{ 
               position: 'absolute', 
               top: '12px', 
@@ -388,64 +387,47 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           </button>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '13px', color: 'var(--color-primary)' }}>
-            <DynamicIcon name="Sparkles" size={16} />
-            <span>Reporte Mensual PDF Listo</span>
+            <DynamicIcon name="FileText" size={16} />
+            <span>Reporte mensual de presupuesto</span>
           </div>
           
           <p style={{ fontSize: '12px', color: 'var(--text-primary)', margin: 0, lineHeight: '1.4' }}>
-            Tu informe inteligente de salud y bienestar financiero de <b>{pdfBanner.label}</b> está disponible para descargar.
+            Tu reporte mensual correspondiente a <b>{monthlyReportData.label}</b> está disponible.
+            {monthlyReportData.hasBudgets && (
+              <> Límite: <b>{formatVal(monthlyReportData.budgetLimit)}</b> | Gastado: <b>{formatVal(monthlyReportData.spent)}</b>.</>
+            )}
           </p>
 
-          <button 
-            onClick={handleDownloadPdfReport}
-            className="btn btn-primary"
-            style={{ 
-              padding: '8px 16px', 
-              fontSize: '12px', 
-              width: 'fit-content',
-              marginTop: '4px'
-            }}
-          >
-            <DynamicIcon name="Download" size={14} />
-            <span>Descargar Reporte PDF</span>
-          </button>
-        </div>
-      )}
+          {monthlyReportData.hasBudgets && monthlyReportData.leftover > 0 && (
+            <div style={{ fontSize: '12px', color: 'var(--color-success)', fontWeight: '600' }}>
+              🎉 Sobrante final del mes: {formatVal(monthlyReportData.leftover)}
+            </div>
+          )}
 
-      {/* Monthly Closure Report Card */}
-      {prevMonthReport && showMonthlyReport && (
-        <div className="card animate-fade-in" style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          gap: '8px', 
-          borderLeft: '4px solid var(--color-success)', 
-          position: 'relative',
-          paddingRight: '36px',
-          backgroundColor: 'rgba(34, 197, 94, 0.06)'
-        }}>
-          <button 
-            onClick={() => setShowMonthlyReport(false)}
-            style={{ 
-              position: 'absolute', 
-              top: '12px', 
-              right: '12px', 
-              background: 'none', 
-              border: 'none', 
-              cursor: 'pointer',
-              color: 'var(--text-muted)'
-            }}
-          >
-            <DynamicIcon name="X" size={16} />
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700', fontSize: '13px', color: 'var(--color-success)' }}>
-            <DynamicIcon name="Award" size={16} />
-            <span>Cierre Mensual de {prevMonthReport.monthName}</span>
-          </div>
-          <p style={{ fontSize: '12px', color: 'var(--text-primary)', margin: 0, lineHeight: '1.4' }}>
-            Tu presupuesto finalizó con Límite de <b>{formatVal(prevMonthReport.budgetLimit)}</b> y Gasto de <b>{formatVal(prevMonthReport.spent)}</b>.
-          </p>
-          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>
-            🎉 El sobrante final de <b>{formatVal(prevMonthReport.leftover)}</b> quedó guardado en tu saldo total.
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
+            <button 
+              onClick={handleDownloadMonthlyBudgetReport}
+              className="btn btn-primary"
+              style={{ 
+                padding: '8px 16px', 
+                fontSize: '12px', 
+                width: 'fit-content',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <DynamicIcon name="Download" size={14} />
+              <span>Descargar Reporte PDF</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('stats')}
+              className="btn btn-secondary"
+              style={{ padding: '8px 12px', fontSize: '12px', width: 'fit-content' }}
+            >
+              Ver en Estadísticas
+            </button>
           </div>
         </div>
       )}

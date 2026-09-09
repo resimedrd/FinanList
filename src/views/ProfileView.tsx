@@ -34,8 +34,31 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
     addRecurring,
     updateRecurring,
     deleteRecurring,
-    signOut
+    signOut,
+    resetFinancialData,
+    deleteAccount,
+    changePassword
   } = useApp();
+
+  // Password change states
+  const [showPasswordModal, setShowPasswordModal] = useState<boolean>(false);
+  const [currentPassword, setCurrentPassword] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
+  const [showCurrentPass, setShowCurrentPass] = useState<boolean>(false);
+  const [showNewPass, setShowNewPass] = useState<boolean>(false);
+  const [passError, setPassError] = useState<string>('');
+  const [passSuccess, setPassSuccess] = useState<string>('');
+  const [isUpdatingPass, setIsUpdatingPass] = useState<boolean>(false);
+
+  // Reset data states
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
+  const [isResetting, setIsResetting] = useState<boolean>(false);
+
+  // Delete account states
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState<boolean>(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
 
   const [name, setName] = useState<string>(profile.name);
   const [username, setUsername] = useState<string>(profile.username || '');
@@ -249,18 +272,73 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
     }
   };
 
-  const handleResetData = () => {
-    if (confirm('¿Estás seguro de que deseas eliminar TODOS los datos de tu cuenta? Esta acción no se puede deshacer.')) {
-      if (confirm('Por favor confirma una última vez. Se borrarán todas tus transacciones, presupuestos, metas, deudas e inversiones.')) {
-        localStorage.removeItem('finanlist_transactions');
-        localStorage.removeItem('finanlist_budgets');
-        localStorage.removeItem('finanlist_goals');
-        localStorage.removeItem('finanlist_debts');
-        localStorage.removeItem('finanlist_recurring');
-        localStorage.removeItem('finanlist_profile');
-        localStorage.removeItem('finanlist_onboarded');
-        window.location.reload();
-      }
+  const handleExecuteResetData = async () => {
+    setIsResetting(true);
+    try {
+      await resetFinancialData();
+      setShowResetConfirmModal(false);
+      alert('¡Tus datos financieros han sido restablecidos exitosamente!');
+    } catch (err: any) {
+      console.error(err);
+      alert('Error al restablecer los datos: ' + (err.message || err));
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const handleExecuteChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPassError('');
+    setPassSuccess('');
+
+    if (!currentPassword) {
+      setPassError('Por favor ingresa tu contraseña actual.');
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      setPassError('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPassError('La nueva contraseña y su confirmación no coinciden.');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPassError('La nueva contraseña no puede ser igual a la contraseña actual.');
+      return;
+    }
+
+    setIsUpdatingPass(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setPassSuccess('¡Contraseña actualizada con éxito!');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        setShowPasswordModal(false);
+        setPassSuccess('');
+      }, 1500);
+    } catch (err: any) {
+      setPassError(err.message || 'Error al cambiar la contraseña. Verifica tu contraseña actual.');
+    } finally {
+      setIsUpdatingPass(false);
+    }
+  };
+
+  const handleExecuteDeleteAccount = async () => {
+    if (deleteConfirmText.trim().toUpperCase() !== 'ELIMINAR') {
+      alert('Por favor escribe la palabra ELIMINAR en mayúsculas para confirmar.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    try {
+      await deleteAccount();
+    } catch (err: any) {
+      console.error(err);
+      alert('Error al eliminar la cuenta: ' + (err.message || err));
+      setIsDeletingAccount(false);
     }
   };
 
@@ -502,9 +580,87 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
             <span>Importar Copia</span>
             <input type="file" accept=".json" onChange={handleImportBackup} style={{ display: 'none' }} />
           </label>
-          <button className="btn btn-secondary" onClick={handleResetData} style={{ ...styles.actionBtn, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
+          <button className="btn btn-secondary" onClick={() => setShowResetConfirmModal(true)} style={{ ...styles.actionBtn, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
             <DynamicIcon name="Trash2" size={16} color="#ef4444" />
             <span>Restablecer Datos</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Security & Password Card */}
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <span style={styles.cardTitle}>Seguridad de la Cuenta</span>
+        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
+          Actualiza la contraseña de tu cuenta para mantener tu información protegida.
+        </p>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => {
+            setPassError('');
+            setPassSuccess('');
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+            setShowPasswordModal(true);
+          }}
+          style={{ ...styles.actionBtn, width: '100%', justifyContent: 'center' }}
+        >
+          <DynamicIcon name="Lock" size={16} color="var(--color-primary)" />
+          <span style={{ fontWeight: '600' }}>Cambiar Contraseña</span>
+        </button>
+      </div>
+
+      {/* Danger Zone Card */}
+      <div className="card" style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        gap: '12px', 
+        border: '1px solid rgba(239, 68, 68, 0.3)', 
+        backgroundColor: 'rgba(239, 68, 68, 0.04)' 
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <DynamicIcon name="AlertTriangle" size={18} color="#ef4444" />
+          <span style={{ ...styles.cardTitle, color: '#ef4444' }}>Zona de Peligro</span>
+        </div>
+        <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+          Acciones de alto impacto sobre tu cuenta y tus registros financieros.
+        </p>
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+          <button 
+            type="button"
+            className="btn btn-secondary" 
+            onClick={() => setShowResetConfirmModal(true)} 
+            style={{ 
+              ...styles.actionBtn, 
+              width: '100%', 
+              color: '#f59e0b', 
+              borderColor: 'rgba(245, 158, 11, 0.3)',
+              justifyContent: 'center' 
+            }}
+          >
+            <DynamicIcon name="RotateCcw" size={16} color="#f59e0b" />
+            <span>Restablecer Datos Financieros</span>
+          </button>
+
+          <button 
+            type="button"
+            className="btn btn-secondary" 
+            onClick={() => {
+              setDeleteConfirmText('');
+              setShowDeleteAccountModal(true);
+            }} 
+            style={{ 
+              ...styles.actionBtn, 
+              width: '100%', 
+              color: '#ef4444', 
+              borderColor: 'rgba(239, 68, 68, 0.35)',
+              justifyContent: 'center' 
+            }}
+          >
+            <DynamicIcon name="Trash2" size={16} color="#ef4444" />
+            <span>Eliminar Perfil y Cuenta</span>
           </button>
         </div>
       </div>
@@ -894,6 +1050,233 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
             <button className="btn btn-primary" onClick={handleSaveRecurring} style={{ marginTop: '10px' }}>
               Programar
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CAMBIAR CONTRASEÑA */}
+      {showPasswordModal && (
+        <div className="modal-overlay open" onClick={() => setShowPasswordModal(false)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '85%', overflowY: 'auto' }}>
+            <div className="modal-header">
+              <h2>Cambiar Contraseña</h2>
+              <button className="btn-ghost" onClick={() => setShowPasswordModal(false)}>
+                <DynamicIcon name="X" size={24} color="var(--text-secondary)" />
+              </button>
+            </div>
+
+            <form onSubmit={handleExecuteChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '10px' }}>
+              {passError && (
+                <div style={{ backgroundColor: 'var(--color-danger-light)', color: 'var(--color-danger)', padding: '10px 14px', borderRadius: '10px', fontSize: '12px' }}>
+                  {passError}
+                </div>
+              )}
+
+              {passSuccess && (
+                <div style={{ backgroundColor: 'var(--color-success-light)', color: 'var(--color-success)', padding: '10px 14px', borderRadius: '10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <DynamicIcon name="CheckCircle" size={16} color="var(--color-success)" />
+                  <span>{passSuccess}</span>
+                </div>
+              )}
+
+              <div className="input-group">
+                <label className="input-label">Contraseña Actual</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showCurrentPass ? 'text' : 'password'}
+                    placeholder="Ingresa tu contraseña actual"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="input-field"
+                    style={{ paddingRight: '40px' }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPass(!showCurrentPass)}
+                    style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                  >
+                    <DynamicIcon name={showCurrentPass ? 'EyeOff' : 'Eye'} size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Nueva Contraseña (mínimo 6 caracteres)</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showNewPass ? 'text' : 'password'}
+                    placeholder="Mínimo 6 caracteres"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="input-field"
+                    style={{ paddingRight: '40px' }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPass(!showNewPass)}
+                    style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                  >
+                    <DynamicIcon name={showNewPass ? 'EyeOff' : 'Eye'} size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Confirmar Nueva Contraseña</label>
+                <input
+                  type={showNewPass ? 'text' : 'password'}
+                  placeholder="Repite la nueva contraseña"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="input-field"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={isUpdatingPass}
+                style={{ marginTop: '8px', padding: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
+              >
+                {isUpdatingPass ? (
+                  <span>Actualizando contraseña...</span>
+                ) : (
+                  <>
+                    <DynamicIcon name="Check" size={16} />
+                    <span>Guardar Nueva Contraseña</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RESTABLECER DATOS */}
+      {showResetConfirmModal && (
+        <div className="modal-overlay open" onClick={() => !isResetting && setShowResetConfirmModal(false)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <DynamicIcon name="RotateCcw" size={20} color="#f59e0b" />
+                <h2 style={{ color: '#f59e0b' }}>Restablecer Datos</h2>
+              </div>
+              <button className="btn-ghost" onClick={() => !isResetting && setShowResetConfirmModal(false)}>
+                <DynamicIcon name="X" size={24} color="var(--text-secondary)" />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '12px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.5, margin: 0 }}>
+                ¿Estás seguro de que deseas restablecer todos tus datos financieros?
+              </p>
+
+              <div style={{ backgroundColor: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '12px', padding: '12px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                <strong style={{ color: '#f59e0b', display: 'block', marginBottom: '4px' }}>Qué sucederá:</strong>
+                • Se eliminarán todas las transacciones, presupuestos, metas de ahorro, deudas y suscripciones recurrentes de la base de datos en la nube y de este dispositivo.<br/>
+                • <strong>Tu cuenta, perfil, correo y contraseña permanecerán intactos.</strong><br/>
+                • Al recargar la página, los datos eliminados no volverán a aparecer.
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={isResetting}
+                  onClick={() => setShowResetConfirmModal(false)}
+                  style={{ flex: 1, padding: '10px' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={isResetting}
+                  onClick={handleExecuteResetData}
+                  style={{ flex: 1, backgroundColor: '#f59e0b', color: '#000', fontWeight: '700', padding: '10px', border: 'none', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer' }}
+                >
+                  {isResetting ? <span>Restableciendo...</span> : <span>Sí, Restablecer</span>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ELIMINAR PERFIL */}
+      {showDeleteAccountModal && (
+        <div className="modal-overlay open" onClick={() => !isDeletingAccount && setShowDeleteAccountModal(false)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <DynamicIcon name="AlertTriangle" size={20} color="#ef4444" />
+                <h2 style={{ color: '#ef4444' }}>Eliminar Perfil y Cuenta</h2>
+              </div>
+              <button className="btn-ghost" onClick={() => !isDeletingAccount && setShowDeleteAccountModal(false)}>
+                <DynamicIcon name="X" size={24} color="var(--text-secondary)" />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '12px' }}>
+              <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '12px', padding: '12px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                <strong style={{ color: '#ef4444', display: 'block', marginBottom: '4px' }}>⚠️ ACCIÓN DEFINITIVA E IRREVERSIBLE:</strong>
+                • Se eliminará permanentemente tu perfil y todos los datos personales asociados en la base de datos.<br/>
+                • Se borrarán todas tus transacciones, presupuestos, metas y deudas.<br/>
+                • Tu sesión se cerrará de inmediato y serás redirigido a la pantalla de registro inicial.
+              </div>
+
+              <div className="input-group">
+                <label className="input-label" style={{ color: 'var(--text-secondary)' }}>
+                  Para confirmar, escribe <b style={{ color: '#ef4444' }}>ELIMINAR</b> en mayúsculas:
+                </label>
+                <input
+                  type="text"
+                  placeholder="ELIMINAR"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  className="input-field"
+                  style={{ textAlign: 'center', fontWeight: '700', letterSpacing: '1px', borderColor: deleteConfirmText.trim().toUpperCase() === 'ELIMINAR' ? '#ef4444' : 'var(--border-color)' }}
+                  disabled={isDeletingAccount}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={isDeletingAccount}
+                  onClick={() => setShowDeleteAccountModal(false)}
+                  style={{ flex: 1, padding: '10px' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={isDeletingAccount || deleteConfirmText.trim().toUpperCase() !== 'ELIMINAR'}
+                  onClick={handleExecuteDeleteAccount}
+                  style={{ 
+                    flex: 1, 
+                    backgroundColor: deleteConfirmText.trim().toUpperCase() === 'ELIMINAR' ? '#ef4444' : 'var(--border-color)', 
+                    color: '#fff', 
+                    fontWeight: '700', 
+                    padding: '10px', 
+                    border: 'none', 
+                    borderRadius: '10px', 
+                    cursor: deleteConfirmText.trim().toUpperCase() === 'ELIMINAR' ? 'pointer' : 'not-allowed',
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    gap: '6px' 
+                  }}
+                >
+                  {isDeletingAccount ? <span>Eliminando...</span> : <span>Eliminar Definitivamente</span>}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

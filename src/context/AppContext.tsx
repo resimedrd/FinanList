@@ -21,9 +21,13 @@ interface AppContextType {
   // Supabase specific
   user: User | null;
   isCloudSynced: boolean;
+  authLoading: boolean;
   signUp: (email: string, pass: string, name: string, username: string) => Promise<any>;
   signIn: (email: string, pass: string) => Promise<any>;
   signOut: () => Promise<void>;
+  resetFinancialData: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
+  changePassword: (currentPass: string, newPass: string) => Promise<void>;
 
   // CRUD Ops
   addTransaction: (tx: Omit<Transaction, 'id'>) => void;
@@ -75,6 +79,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Supabase auth state
   const [user, setUser] = useState<User | null>(null);
   const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
+  const [authLoading, setAuthLoading] = useState<boolean>(() => isSupabaseConfigured);
 
   const [localIsOnboarded, setLocalIsOnboarded] = useState<boolean>(() => {
     return localStorage.getItem('finanlist_onboarded') === 'true';
@@ -104,15 +109,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Sync Supabase Authentication
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured) {
+      setAuthLoading(false);
+      return;
+    }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       const activeUser = session?.user ?? null;
       setUser(activeUser);
       setIsCloudSynced(!!activeUser);
       if (activeUser) {
-        loadAllFromCloud(activeUser.id);
+        localStorage.setItem('finanlist_onboarded', 'true');
+        setLocalIsOnboarded(true);
+        try {
+          await loadAllFromCloud(activeUser.id);
+        } finally {
+          setAuthLoading(false);
+        }
+      } else {
+        setAuthLoading(false);
       }
+    }).catch(() => {
+      setAuthLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -120,10 +138,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUser(activeUser);
       setIsCloudSynced(!!activeUser);
       if (activeUser) {
+        localStorage.setItem('finanlist_onboarded', 'true');
+        setLocalIsOnboarded(true);
         loadAllFromCloud(activeUser.id);
       } else {
         reloadAll();
       }
+      setAuthLoading(false);
     });
 
     return () => {
@@ -349,6 +370,95 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuthenticated(false);
     reloadAll();
     window.location.reload();
+  };
+
+  const resetFinancialData = async () => {
+    // 1. Delete all financial records from Supabase
+    if (isCloudSynced && user) {
+      try {
+        await supabase.from('transactions').delete().eq('user_id', user.id);
+        await supabase.from('recurring').delete().eq('user_id', user.id);
+        await supabase.from('debts').delete().eq('user_id', user.id);
+        await supabase.from('budgets').delete().eq('user_id', user.id);
+        await supabase.from('goals').delete().eq('user_id', user.id);
+      } catch (e) {
+        console.error('Error resetting cloud data:', e);
+        throw e;
+      }
+    }
+
+    // 2. Clear financial data in localStorage (keeping profile, onboarded status, preferences)
+    localStorage.removeItem('finanlist_transactions');
+    localStorage.removeItem('finanlist_budgets');
+    localStorage.removeItem('finanlist_goals');
+    localStorage.removeItem('finanlist_debts');
+    localStorage.removeItem('finanlist_recurring');
+
+    // 3. Update React state immediately
+    setTransactions([]);
+    setBudgets([]);
+    setGoals([]);
+    setDebts([]);
+    setRecurring([]);
+  };
+
+  const deleteAccount = async () => {
+    // 1. Delete all data and profile from Supabase
+    if (isCloudSynced && user) {
+      try {
+        await supabase.from('transactions').delete().eq('user_id', user.id);
+        await supabase.from('recurring').delete().eq('user_id', user.id);
+        await supabase.from('debts').delete().eq('user_id', user.id);
+        await supabase.from('budgets').delete().eq('user_id', user.id);
+        await supabase.from('goals').delete().eq('user_id', user.id);
+        await supabase.from('categories').delete().eq('user_id', user.id);
+        await supabase.from('profiles').delete().eq('id', user.id);
+      } catch (e) {
+        console.error('Error deleting user data from Supabase:', e);
+      }
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.error('Error signing out during deletion:', e);
+      }
+    }
+
+    // 2. Clear all local storage
+    localStorage.clear();
+
+    // 3. Reset states and reload cleanly
+    setUser(null);
+    setIsCloudSynced(false);
+    setLocalIsOnboarded(false);
+    setAuthenticated(false);
+    reloadAll();
+    window.location.reload();
+  };
+
+  const changePassword = async (currentPass: string, newPass: string) => {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase no está configurado.');
+    }
+    if (!user || !user.email) {
+      throw new Error('No hay una sesión activa.');
+    }
+
+    // 1. Verify current password
+    const { error: verifyErr } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPass
+    });
+    if (verifyErr) {
+      throw new Error('La contraseña actual es incorrecta.');
+    }
+
+    // 2. Update to new password
+    const { error: updateErr } = await supabase.auth.updateUser({
+      password: newPass
+    });
+    if (updateErr) {
+      throw updateErr;
+    }
   };
 
   const setStealthMode = (val: boolean) => {
@@ -964,9 +1074,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTab,
         user,
         isCloudSynced,
+        authLoading,
         signUp,
         signIn,
         signOut,
+        resetFinancialData,
+        deleteAccount,
+        changePassword,
         addTransaction,
         updateTransaction,
         deleteTransaction,

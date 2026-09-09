@@ -15,7 +15,7 @@ import { WelcomeTour } from './components/WelcomeTour';
 import { InstallPrompt } from './components/InstallPrompt';
 
 const MainLayout: React.FC = () => {
-  const { isAuthenticated, activeTab, setActiveTab, isOnboarded, profile, setAuthenticated } = useApp();
+  const { isAuthenticated, activeTab, setActiveTab, isOnboarded, profile, setAuthenticated, authLoading } = useApp();
   
   // Apply theme and accent color globally
   React.useEffect(() => {
@@ -177,6 +177,22 @@ const MainLayout: React.FC = () => {
         return <HomeView onOpenTransactionModal={handleOpenTransactionModal} />;
     }
   };
+
+  // If session is still verifying/hydrating from Supabase, show a branded loading screen
+  if (authLoading) {
+    return (
+      <div className="phone-viewport" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#09090b' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          <img 
+            src="/icons/icon-192x192.png" 
+            alt="FinanList" 
+            style={{ width: '64px', height: '64px', borderRadius: '16px', animation: 'pulseGlow 2s infinite alternate' }} 
+          />
+          <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: '500' }}>Cargando FinanList...</span>
+        </div>
+      </div>
+    );
+  }
 
   // If not onboarded, show Onboarding
   if (!isOnboarded) {

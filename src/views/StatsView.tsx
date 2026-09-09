@@ -524,10 +524,10 @@ export const StatsView: React.FC = () => {
         
         <div style={{ textAlign: 'center' }}>
           <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-primary)', marginBottom: '4px' }}>
-            Reporte Mensual Inteligente
+            Reporte mensual de presupuesto
           </h3>
           <p style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4', maxWidth: '320px', margin: '0 auto' }}>
-            Genera un informe detallado en PDF con tus métricas de ahorro, KPIs de salud financiera, desglose de presupuestos y consejos del asesor.
+            Consulta y descarga el informe detallado en PDF para cualquier mes, con balance de ingresos, gastos, desglose de presupuestos y KPIs financieros.
           </p>
         </div>
 
