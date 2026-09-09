@@ -299,65 +299,67 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
   };
 
   return (
-    <>
-      <div className="view-content animate-fade-in">
-      {/* Header Profile Info with Brand Title and Sub-greeting */}
-      <div style={styles.header}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-            <DynamicIcon name="Coins" size={20} color="var(--color-primary)" />
-            <h1 style={{
-              fontSize: '22px',
-              fontWeight: '900',
-              fontFamily: 'var(--font-display)',
-              color: 'var(--text-primary)',
-              margin: 0
-            }}>
-              FinanList
-            </h1>
+    <div className="view-screen animate-fade-in">
+      {/* Fixed View Header */}
+      <div className="view-header">
+        <div style={styles.header}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+              <DynamicIcon name="Coins" size={20} color="var(--color-primary)" />
+              <h1 style={{
+                fontSize: '22px',
+                fontWeight: '900',
+                fontFamily: 'var(--font-display)',
+                color: 'var(--text-primary)',
+                margin: 0
+              }}>
+                FinanList
+              </h1>
+            </div>
+            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+              Hola de nuevo, <b>{profile.name}</b>
+            </span>
           </div>
-          <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-            Hola de nuevo, <b>{profile.name}</b>
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button
-            onClick={() => setStealthMode(!stealthMode)}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '6px'
-            }}
-            title={stealthMode ? 'Mostrar montos' : 'Ocultar montos'}
-          >
-            <DynamicIcon name={stealthMode ? 'EyeOff' : 'Eye'} size={20} />
-          </button>
-          
-          <div 
-            style={{ ...styles.avatarCircle, cursor: 'pointer' }} 
-            onClick={() => setActiveTab('profile')}
-            title="Ver perfil"
-          >
-            {profile.avatar ? (
-              <img src={profile.avatar} alt="Profile" style={styles.avatarImg} />
-            ) : (
-              <span style={styles.avatarInitial}>{profile.name.charAt(0)}</span>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              onClick={() => setStealthMode(!stealthMode)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '6px'
+              }}
+              title={stealthMode ? 'Mostrar montos' : 'Ocultar montos'}
+            >
+              <DynamicIcon name={stealthMode ? 'EyeOff' : 'Eye'} size={20} />
+            </button>
+            
+            <div 
+              style={{ ...styles.avatarCircle, cursor: 'pointer' }} 
+              onClick={() => setActiveTab('profile')}
+              title="Ver perfil"
+            >
+              {profile.avatar ? (
+                <img src={profile.avatar} alt="Profile" style={styles.avatarImg} />
+              ) : (
+                <span style={styles.avatarInitial}>{profile.name.charAt(0)}</span>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-
-      {/* Motivational Quote banner */}
-      <div style={styles.quoteBanner}>
-        <DynamicIcon name="Sparkles" size={16} color="var(--color-primary)" />
-        <span style={{ ...styles.quoteText, flex: 1, minWidth: 0 }}>{quoteOfTheDay}</span>
-      </div>
+      {/* Scrollable Content Area */}
+      <div className="view-content">
+        {/* Motivational Quote banner */}
+        <div style={styles.quoteBanner}>
+          <DynamicIcon name="Sparkles" size={16} color="var(--color-primary)" />
+          <span style={{ ...styles.quoteText, flex: 1, minWidth: 0 }}>{quoteOfTheDay}</span>
+        </div>
 
       {/* Reporte mensual de presupuesto (Solo aparece automáticamente el día 1 de cada mes) */}
       {showMonthlyBudgetCard && (
@@ -875,7 +877,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };
 
@@ -884,7 +886,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: '10px',
+    width: '100%',
   },
   greeting: {
     fontSize: '13px',

@@ -144,73 +144,77 @@ export const StatsView: React.FC = () => {
   const topExpenses = chartData.slice(0, 5);
 
   return (
-    <div className="view-content animate-fade-in">
-      <div style={styles.header}>
-        <h2>Estadísticas</h2>
-        <button
-          onClick={() => setStealthMode(!stealthMode)}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '6px'
-          }}
-          title={stealthMode ? 'Mostrar montos' : 'Ocultar montos'}
-        >
-          <DynamicIcon name={stealthMode ? 'EyeOff' : 'Eye'} size={20} />
-        </button>
+    <div className="view-screen animate-fade-in">
+      {/* Fixed View Header */}
+      <div className="view-header">
+        <div style={styles.header}>
+          <h2>Estadísticas</h2>
+          <button
+            onClick={() => setStealthMode(!stealthMode)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px'
+            }}
+            title={stealthMode ? 'Mostrar montos' : 'Ocultar montos'}
+          >
+            <DynamicIcon name={stealthMode ? 'EyeOff' : 'Eye'} size={20} />
+          </button>
+        </div>
+
+        {/* Segment switcher */}
+        <div style={styles.segmentControl}>
+          <button
+            onClick={() => setActiveTab('rule')}
+            style={{
+              ...styles.segmentBtn,
+              backgroundColor: activeTab === 'rule' ? 'var(--bg-phone)' : 'transparent',
+              color: activeTab === 'rule' ? 'var(--color-primary)' : 'var(--text-secondary)',
+              fontWeight: activeTab === 'rule' ? '700' : '500',
+              boxShadow: activeTab === 'rule' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
+            }}
+          >
+            <DynamicIcon name="Sliders" size={14} />
+            <span style={{ marginLeft: '4px' }}>Fórmula 50/30/20</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('comparison')}
+            style={{
+              ...styles.segmentBtn,
+              backgroundColor: activeTab === 'comparison' ? 'var(--bg-phone)' : 'transparent',
+              color: activeTab === 'comparison' ? 'var(--color-primary)' : 'var(--text-secondary)',
+              fontWeight: activeTab === 'comparison' ? '700' : '500',
+              boxShadow: activeTab === 'comparison' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
+            }}
+          >
+            <DynamicIcon name="BarChart2" size={14} />
+            <span style={{ marginLeft: '4px' }}>Comparación</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('flow')}
+            style={{
+              ...styles.segmentBtn,
+              backgroundColor: activeTab === 'flow' ? 'var(--bg-phone)' : 'transparent',
+              color: activeTab === 'flow' ? 'var(--color-primary)' : 'var(--text-secondary)',
+              fontWeight: activeTab === 'flow' ? '700' : '500',
+              boxShadow: activeTab === 'flow' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
+            }}
+          >
+            <DynamicIcon name="TrendingUp" size={14} />
+            <span style={{ marginLeft: '4px' }}>Tendencias</span>
+          </button>
+        </div>
       </div>
 
-
-      {/* Segment switcher */}
-      <div style={styles.segmentControl}>
-        <button
-          onClick={() => setActiveTab('rule')}
-          style={{
-            ...styles.segmentBtn,
-            backgroundColor: activeTab === 'rule' ? 'var(--bg-phone)' : 'transparent',
-            color: activeTab === 'rule' ? 'var(--color-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'rule' ? '700' : '500',
-            boxShadow: activeTab === 'rule' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
-          }}
-        >
-          <DynamicIcon name="Sliders" size={14} />
-          <span style={{ marginLeft: '4px' }}>Fórmula 50/30/20</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('comparison')}
-          style={{
-            ...styles.segmentBtn,
-            backgroundColor: activeTab === 'comparison' ? 'var(--bg-phone)' : 'transparent',
-            color: activeTab === 'comparison' ? 'var(--color-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'comparison' ? '700' : '500',
-            boxShadow: activeTab === 'comparison' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
-          }}
-        >
-          <DynamicIcon name="BarChart2" size={14} />
-          <span style={{ marginLeft: '4px' }}>Comparación</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('flow')}
-          style={{
-            ...styles.segmentBtn,
-            backgroundColor: activeTab === 'flow' ? 'var(--bg-phone)' : 'transparent',
-            color: activeTab === 'flow' ? 'var(--color-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'flow' ? '700' : '500',
-            boxShadow: activeTab === 'flow' ? '0 2px 8px rgba(0, 0, 0, 0.04)' : 'none',
-          }}
-        >
-          <DynamicIcon name="TrendingUp" size={14} />
-          <span style={{ marginLeft: '4px' }}>Tendencias</span>
-        </button>
-      </div>
-
-      {/* --- CHART CONTAINERS --- */}
-      <div className="card" style={styles.chartCard}>
+      {/* Scrollable Content Area */}
+      <div className="view-content">
+        {/* --- CHART CONTAINERS --- */}
+        <div className="card" style={styles.chartCard}>
         {activeTab === 'rule' && (
           <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <h4 style={styles.chartTitle}>Fórmula de Presupuesto 50/30/20</h4>
@@ -582,6 +586,7 @@ export const StatsView: React.FC = () => {
         </button>
       </div>
     </div>
+  </div>
   );
 };
 

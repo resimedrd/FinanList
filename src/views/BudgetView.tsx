@@ -833,79 +833,82 @@ export const BudgetView: React.FC = () => {
 
 
   return (
-    <>
-      <div className="view-content animate-fade-in">
-      <div style={styles.header}>
-        <h2>Planificación</h2>
-        <button
-          onClick={() => setStealthMode(!stealthMode)}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '6px'
-          }}
-          title={stealthMode ? 'Mostrar montos' : 'Ocultar montos'}
-        >
-          <DynamicIcon name={stealthMode ? 'EyeOff' : 'Eye'} size={20} />
-        </button>
+    <div className="view-screen animate-fade-in">
+      {/* Fixed View Header */}
+      <div className="view-header">
+        <div style={styles.header}>
+          <h2>Planificación</h2>
+          <button
+            onClick={() => setStealthMode(!stealthMode)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px'
+            }}
+            title={stealthMode ? 'Mostrar montos' : 'Ocultar montos'}
+          >
+            <DynamicIcon name={stealthMode ? 'EyeOff' : 'Eye'} size={20} />
+          </button>
+        </div>
+
+        {/* Selector segment */}
+        <div style={styles.segmentControl}>
+          <button
+            onClick={() => setActiveSegment('budgets')}
+            style={{
+              ...styles.segmentBtn,
+              backgroundColor: activeSegment === 'budgets' ? 'var(--bg-phone)' : 'transparent',
+              color: activeSegment === 'budgets' ? 'var(--color-primary)' : 'var(--text-secondary)',
+              fontWeight: activeSegment === 'budgets' ? '700' : '500',
+            }}
+          >
+            Presupuestos
+          </button>
+          <button
+            onClick={() => setActiveSegment('goals')}
+            style={{
+              ...styles.segmentBtn,
+              backgroundColor: activeSegment === 'goals' ? 'var(--bg-phone)' : 'transparent',
+              color: activeSegment === 'goals' ? 'var(--color-primary)' : 'var(--text-secondary)',
+              fontWeight: activeSegment === 'goals' ? '700' : '500',
+            }}
+          >
+            Metas
+          </button>
+          <button
+            onClick={() => setActiveSegment('debts')}
+            style={{
+              ...styles.segmentBtn,
+              backgroundColor: activeSegment === 'debts' ? 'var(--bg-phone)' : 'transparent',
+              color: activeSegment === 'debts' ? 'var(--color-primary)' : 'var(--text-secondary)',
+              fontWeight: activeSegment === 'debts' ? '700' : '500',
+            }}
+          >
+            Deudas
+          </button>
+          <button
+            onClick={() => setActiveSegment('investments')}
+            style={{
+              ...styles.segmentBtn,
+              backgroundColor: activeSegment === 'investments' ? 'var(--bg-phone)' : 'transparent',
+              color: activeSegment === 'investments' ? 'var(--color-primary)' : 'var(--text-secondary)',
+              fontWeight: activeSegment === 'investments' ? '700' : '500',
+            }}
+          >
+            Inversiones
+          </button>
+        </div>
       </div>
 
-
-      {/* Selector segment */}
-      <div style={styles.segmentControl}>
-        <button
-          onClick={() => setActiveSegment('budgets')}
-          style={{
-            ...styles.segmentBtn,
-            backgroundColor: activeSegment === 'budgets' ? 'var(--bg-phone)' : 'transparent',
-            color: activeSegment === 'budgets' ? 'var(--color-primary)' : 'var(--text-secondary)',
-            fontWeight: activeSegment === 'budgets' ? '700' : '500',
-          }}
-        >
-          Presupuestos
-        </button>
-        <button
-          onClick={() => setActiveSegment('goals')}
-          style={{
-            ...styles.segmentBtn,
-            backgroundColor: activeSegment === 'goals' ? 'var(--bg-phone)' : 'transparent',
-            color: activeSegment === 'goals' ? 'var(--color-primary)' : 'var(--text-secondary)',
-            fontWeight: activeSegment === 'goals' ? '700' : '500',
-          }}
-        >
-          Metas
-        </button>
-        <button
-          onClick={() => setActiveSegment('debts')}
-          style={{
-            ...styles.segmentBtn,
-            backgroundColor: activeSegment === 'debts' ? 'var(--bg-phone)' : 'transparent',
-            color: activeSegment === 'debts' ? 'var(--color-primary)' : 'var(--text-secondary)',
-            fontWeight: activeSegment === 'debts' ? '700' : '500',
-          }}
-        >
-          Deudas
-        </button>
-        <button
-          onClick={() => setActiveSegment('investments')}
-          style={{
-            ...styles.segmentBtn,
-            backgroundColor: activeSegment === 'investments' ? 'var(--bg-phone)' : 'transparent',
-            color: activeSegment === 'investments' ? 'var(--color-primary)' : 'var(--text-secondary)',
-            fontWeight: activeSegment === 'investments' ? '700' : '500',
-          }}
-        >
-          Inversiones
-        </button>
-      </div>
-
-      {/* --- BUDGETS SEGMENT --- */}
-      {activeSegment === 'budgets' && (
+      {/* Scrollable Content Area */}
+      <div className="view-content">
+        {/* --- BUDGETS SEGMENT --- */}
+        {activeSegment === 'budgets' && (
         <div style={styles.listContainer}>
           <button className="btn btn-secondary" onClick={() => setShowAddBudget(true)} style={styles.addBtn}>
             <DynamicIcon name="Plus" size={16} />
@@ -2296,7 +2299,7 @@ export const BudgetView: React.FC = () => {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };
 

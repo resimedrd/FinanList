@@ -196,12 +196,20 @@ const MainLayout: React.FC = () => {
 
   // If not onboarded, show Onboarding
   if (!isOnboarded) {
-    return <OnboardingView />;
+    return (
+      <div className="phone-viewport">
+        <OnboardingView />
+      </div>
+    );
   }
 
   // If not authenticated, show Lockscreen
   if (!isAuthenticated) {
-    return <LockScreen />;
+    return (
+      <div className="phone-viewport">
+        <LockScreen />
+      </div>
+    );
   }
 
   return (
@@ -268,9 +276,6 @@ const MainLayout: React.FC = () => {
           <span>Estadísticas</span>
         </button>
       </nav>
-      
-      {/* Bottom home indicator safe area */}
-      <div className="safe-area-bottom" />
 
       {showWelcomeTour && (
         <WelcomeTour 

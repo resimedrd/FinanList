@@ -172,53 +172,58 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
   };
 
   return (
-    <div className="view-content animate-fade-in">
-      <div style={styles.header}>
-        <h2>Movimientos</h2>
-        <button
-          onClick={() => setShowCalendar(!showCalendar)}
-          style={{
-            ...styles.calendarToggleBtn,
-            backgroundColor: showCalendar ? 'var(--color-primary-light)' : 'var(--bg-card)',
-            borderColor: showCalendar ? 'var(--color-primary)' : 'var(--border-color)',
-          }}
-        >
-          <DynamicIcon name="Calendar" size={18} color={showCalendar ? 'var(--color-primary)' : 'var(--text-primary)'} />
-          <span>Calendario</span>
-        </button>
-      </div>
-
-      {/* Search Input Bar */}
-      <div style={styles.searchRow}>
-        <div style={styles.searchBar}>
-          <DynamicIcon name="Search" size={18} color="var(--text-muted)" />
-          <input
-            type="text"
-            placeholder="Buscar por monto, nota, etiqueta..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={styles.searchInput}
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} style={styles.clearSearchBtn}>
-              <DynamicIcon name="X" size={14} />
-            </button>
-          )}
+    <div className="view-screen animate-fade-in">
+      {/* Fixed View Header */}
+      <div className="view-header">
+        <div style={styles.header}>
+          <h2>Movimientos</h2>
+          <button
+            onClick={() => setShowCalendar(!showCalendar)}
+            style={{
+              ...styles.calendarToggleBtn,
+              backgroundColor: showCalendar ? 'var(--color-primary-light)' : 'var(--bg-card)',
+              borderColor: showCalendar ? 'var(--color-primary)' : 'var(--border-color)',
+            }}
+          >
+            <DynamicIcon name="Calendar" size={18} color={showCalendar ? 'var(--color-primary)' : 'var(--text-primary)'} />
+            <span>Calendario</span>
+          </button>
         </div>
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          style={{
-            ...styles.filterToggleBtn,
-            backgroundColor: showFilters ? 'var(--bg-card-hover)' : 'var(--bg-card)',
-            borderColor: showFilters ? 'var(--border-focus)' : 'var(--border-color)',
-          }}
-        >
-          <DynamicIcon name="SlidersHorizontal" size={18} />
-        </button>
+
+        {/* Search Input Bar */}
+        <div style={styles.searchRow}>
+          <div style={styles.searchBar}>
+            <DynamicIcon name="Search" size={18} color="var(--text-muted)" />
+            <input
+              type="text"
+              placeholder="Buscar por monto, nota, etiqueta..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={styles.searchInput}
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} style={styles.clearSearchBtn}>
+                <DynamicIcon name="X" size={14} />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            style={{
+              ...styles.filterToggleBtn,
+              backgroundColor: showFilters ? 'var(--bg-card-hover)' : 'var(--bg-card)',
+              borderColor: showFilters ? 'var(--border-focus)' : 'var(--border-color)',
+            }}
+          >
+            <DynamicIcon name="SlidersHorizontal" size={18} />
+          </button>
+        </div>
       </div>
 
-      {/* Advanced Filter Panel */}
-      {showFilters && (
+      {/* Scrollable Content Area */}
+      <div className="view-content">
+        {/* Advanced Filter Panel */}
+        {showFilters && (
         <div className="card animate-fade-in" style={styles.filterPanel}>
           <div style={styles.filterItem}>
             <span style={styles.filterLabel}>Tipo de Movimiento</span>
@@ -486,6 +491,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
         )}
       </div>
     </div>
+  </div>
   );
 };
 

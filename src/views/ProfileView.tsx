@@ -348,12 +348,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
   const handleExportPDF = () => ExportImportService.exportToPDF(transactions, profile.currency);
 
   return (
-    <div className="view-content animate-fade-in">
-      <div style={styles.header}>
-        <h2>Mi Perfil</h2>
+    <div className="view-screen animate-fade-in">
+      {/* Fixed View Header */}
+      <div className="view-header">
+        <div style={styles.header}>
+          <h2>Mi Perfil</h2>
+        </div>
       </div>
 
-      {/* Avatar Card */}
+      {/* Scrollable Content Area */}
+      <div className="view-content">
+        {/* Avatar Card */}
       <div className="card" style={styles.profileCard}>
         <div style={styles.avatarContainer}>
           <div style={styles.avatarCircle}>
@@ -693,6 +698,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
         <DynamicIcon name="LogOut" size={16} />
         <span>Cerrar Sesión</span>
       </button>
+      </div>
 
       {/* CATEGORIES MANAGEMENT MODAL */}
       {showCatModal && (
