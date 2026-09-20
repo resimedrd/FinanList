@@ -606,6 +606,18 @@ h1, h2, h3, h4, h5, h6 {
   animation: fadeInUp var(--transition-slow) forwards;
 }
 
+/* Modal scale & fade pop-in animation */
+@keyframes modalPop {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 /* Lockscreen Dot Animation */
 @keyframes shake {
   0%, 100% { transform: translateX(0); }

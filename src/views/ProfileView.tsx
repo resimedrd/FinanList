@@ -37,7 +37,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
     signOut,
     resetFinancialData,
     deleteAccount,
-    changePassword
+    changePassword,
+    cards,
+    setActiveTab
   } = useApp();
 
   // Password change states
@@ -515,6 +517,27 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
       </div>
 
 
+
+      {/* Payment Cards Section */}
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={styles.cardTitle}>Tarjetas y Cuentas</span>
+          <span style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: '700' }}>
+            {cards.filter(c => c.isActive).length} activas
+          </span>
+        </div>
+        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+          Administra tus tarjetas de débito, crédito y límites de sobregiro o alertas de uso de saldo.
+        </p>
+        <button
+          className="btn btn-secondary"
+          onClick={() => setActiveTab('cards')}
+          style={{ ...styles.actionBtn, width: '100%', borderColor: 'rgba(99, 102, 241, 0.35)', color: '#6366f1' }}
+        >
+          <DynamicIcon name="CreditCard" size={16} color="#6366f1" />
+          <span style={{ fontWeight: '700' }}>Gestionar Mis Tarjetas</span>
+        </button>
+      </div>
 
       {/* Advanced Administration */}
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Transaction, Category, Budget, SavingGoal, UserProfile, RecurringTransaction, Debt } from '../models/types';
+import { Transaction, Category, Budget, SavingGoal, UserProfile, RecurringTransaction, Debt, PaymentCard, FinancialNotification } from '../models/types';
 import { LocalRepository } from '../repositories/LocalRepository';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { User } from '@supabase/supabase-js';
@@ -12,11 +12,13 @@ interface AppContextType {
   profile: UserProfile;
   recurring: RecurringTransaction[];
   debts: Debt[];
+  cards: PaymentCard[];
+  notifications: FinancialNotification[];
   isAuthenticated: boolean;
   setAuthenticated: (val: boolean) => void;
   isOnboarded: boolean;
-  activeTab: 'home' | 'history' | 'budget' | 'stats' | 'profile';
-  setActiveTab: (tab: 'home' | 'history' | 'budget' | 'stats' | 'profile') => void;
+  activeTab: 'home' | 'history' | 'budget' | 'stats' | 'profile' | 'cards';
+  setActiveTab: (tab: 'home' | 'history' | 'budget' | 'stats' | 'profile' | 'cards') => void;
   
   // Supabase specific
   user: User | null;
@@ -34,6 +36,20 @@ interface AppContextType {
   updateTransaction: (tx: Transaction) => void;
   deleteTransaction: (id: string) => void;
   
+  // Card Ops
+  addCard: (cardData: Omit<PaymentCard, 'id' | 'createdAt'>) => string;
+  updateCard: (card: PaymentCard) => void;
+  deleteCard: (id: string) => void;
+  toggleCardActive: (id: string) => void;
+  recordCardPayment: (params: { destinationCardId: string; sourceCardId?: string; amount: number; date: string; time: string; notes?: string }) => void;
+
+  // Notification Ops
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  deleteNotification: (id: string) => void;
+  clearAllNotifications: () => void;
+  requestNotificationPermission: () => Promise<NotificationPermission | null>;
+
   addCategory: (cat: Omit<Category, 'id'>) => string;
   updateCategory: (cat: Category) => void;
   deleteCategory: (id: string) => void;
@@ -75,6 +91,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [profile, setProfile] = useState<UserProfile>(() => LocalRepository.getProfile());
   const [recurring, setRecurring] = useState<RecurringTransaction[]>(() => LocalRepository.getRecurring());
   const [debts, setDebts] = useState<Debt[]>(() => LocalRepository.getDebts());
+  const [cards, setCards] = useState<PaymentCard[]>(() => LocalRepository.getCards());
+  const [notifications, setNotifications] = useState<FinancialNotification[]>(() => LocalRepository.getNotifications());
   
   // Supabase auth state
   const [user, setUser] = useState<User | null>(null);
@@ -90,7 +108,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return !p.pinCode;
   });
 
-  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'budget' | 'stats' | 'profile'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'budget' | 'stats' | 'profile' | 'cards'>('home');
   const [stealthMode, setStealthModeInternal] = useState<boolean>(() => {
     const p = LocalRepository.getProfile();
     return !!p.stealthModeEnabled;
@@ -105,6 +123,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProfile(LocalRepository.getProfile());
     setRecurring(LocalRepository.getRecurring());
     setDebts(LocalRepository.getDebts());
+    setCards(LocalRepository.getCards());
+    setNotifications(LocalRepository.getNotifications());
   };
 
   // Sync Supabase Authentication
@@ -211,6 +231,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           categoryId: t.category_id,
           subcategoryId: t.subcategory_id || undefined,
           account: t.account,
+          cardId: t.card_id || undefined,
+          destinationCardId: t.destination_card_id || undefined,
           date: t.date,
           time: t.time,
           notes: t.notes || undefined,
@@ -291,6 +313,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }));
         setRecurring(loadedRec);
         LocalRepository.saveRecurring(loadedRec);
+      }
+
+      // 8. Payment Cards
+      try {
+        const { data: cardData } = await supabase.from('cards').select('*');
+        if (cardData && cardData.length > 0) {
+          const loadedCards = cardData.map(c => ({
+            id: c.id,
+            name: c.name,
+            bank: c.bank,
+            type: c.type as any,
+            lastFourDigits: c.last_four_digits || undefined,
+            currency: c.currency || 'RD$',
+            color: c.color || '#4f46e5',
+            isActive: c.is_active !== false,
+            initialBalance: c.initial_balance !== null && c.initial_balance !== undefined ? parseFloat(c.initial_balance) : 0,
+            currentBalance: c.current_balance !== null && c.current_balance !== undefined ? parseFloat(c.current_balance) : 0,
+            minBalanceAlert: c.min_balance_alert !== null && c.min_balance_alert !== undefined ? parseFloat(c.min_balance_alert) : undefined,
+            allowOverdraft: !!c.allow_overdraft,
+            overdraftLimit: c.overdraft_limit !== null && c.overdraft_limit !== undefined ? parseFloat(c.overdraft_limit) : 0,
+            creditLimit: c.credit_limit !== null && c.credit_limit !== undefined ? parseFloat(c.credit_limit) : 0,
+            balanceUsed: c.balance_used !== null && c.balance_used !== undefined ? parseFloat(c.balance_used) : 0,
+            alertThresholdPercent: c.alert_threshold_percent || 80,
+            billingCutoffDay: c.billing_cutoff_day || 15,
+            paymentDueDay: c.payment_due_day || 5,
+            createdAt: c.created_at || new Date().toISOString()
+          }));
+          setCards(loadedCards);
+          LocalRepository.saveCards(loadedCards);
+        }
+      } catch (cardErr) {
+        console.warn('Could not load cards from Supabase (table may not exist yet):', cardErr);
+      }
+
+      // 9. Financial Notifications
+      try {
+        const { data: notifData } = await supabase
+          .from('financial_notifications')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (notifData && notifData.length > 0) {
+          const loadedNotifs = notifData.map(n => ({
+            id: n.id,
+            cardId: n.card_id || undefined,
+            cardName: n.card_name || undefined,
+            type: n.type as any,
+            severity: n.severity as any,
+            title: n.title,
+            message: n.message,
+            isRead: !!n.is_read,
+            createdAt: n.created_at
+          }));
+          setNotifications(loadedNotifs);
+          LocalRepository.saveNotifications(loadedNotifs);
+        }
+      } catch (notifErr) {
+        console.warn('Could not load notifications from Supabase (table may not exist yet):', notifErr);
       }
 
     } catch (err) {
@@ -381,6 +460,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await supabase.from('debts').delete().eq('user_id', user.id);
         await supabase.from('budgets').delete().eq('user_id', user.id);
         await supabase.from('goals').delete().eq('user_id', user.id);
+        await supabase.from('financial_notifications').delete().eq('user_id', user.id);
+        await supabase.from('cards').delete().eq('user_id', user.id);
       } catch (e) {
         console.error('Error resetting cloud data:', e);
         throw e;
@@ -393,6 +474,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem('finanlist_goals');
     localStorage.removeItem('finanlist_debts');
     localStorage.removeItem('finanlist_recurring');
+    localStorage.removeItem('finanlist_cards');
+    localStorage.removeItem('finanlist_notifications');
 
     // 3. Update React state immediately
     setTransactions([]);
@@ -400,6 +483,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setGoals([]);
     setDebts([]);
     setRecurring([]);
+    setCards([]);
+    setNotifications([]);
   };
 
   const deleteAccount = async () => {
@@ -411,6 +496,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await supabase.from('debts').delete().eq('user_id', user.id);
         await supabase.from('budgets').delete().eq('user_id', user.id);
         await supabase.from('goals').delete().eq('user_id', user.id);
+        await supabase.from('financial_notifications').delete().eq('user_id', user.id);
+        await supabase.from('cards').delete().eq('user_id', user.id);
         await supabase.from('categories').delete().eq('user_id', user.id);
         await supabase.from('profiles').delete().eq('id', user.id);
       } catch (e) {
@@ -474,12 +561,265 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // --- Card & Notification Helpers ---
+  const syncCardToCloud = async (card: PaymentCard) => {
+    if (!isCloudSynced || !user) return;
+    try {
+      await supabase.from('cards').upsert({
+        id: card.id,
+        user_id: user.id,
+        name: card.name,
+        bank: card.bank,
+        type: card.type,
+        last_four_digits: card.lastFourDigits || null,
+        currency: card.currency,
+        color: card.color,
+        is_active: card.isActive,
+        initial_balance: card.initialBalance ?? 0,
+        current_balance: card.currentBalance ?? 0,
+        min_balance_alert: card.minBalanceAlert ?? null,
+        allow_overdraft: card.allowOverdraft ?? false,
+        overdraft_limit: card.overdraftLimit ?? 0,
+        credit_limit: card.creditLimit ?? 0,
+        balance_used: card.balanceUsed ?? 0,
+        alert_threshold_percent: card.alertThresholdPercent ?? 80,
+        billing_cutoff_day: card.billingCutoffDay ?? 15,
+        payment_due_day: card.paymentDueDay ?? 5,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('Error syncing card to Supabase:', e);
+    }
+  };
+
+  const checkAndTriggerCardAlerts = (card: PaymentCard) => {
+    if (!card.isActive) return;
+
+    const notificationsToAdd: FinancialNotification[] = [];
+    const existingNotifs = LocalRepository.getNotifications();
+
+    if (card.type === 'credit') {
+      const limit = card.creditLimit || 0;
+      const used = card.balanceUsed || 0;
+      if (limit > 0) {
+        const usedPercent = (used / limit) * 100;
+        const threshold = card.alertThresholdPercent || 80;
+
+        if (used > limit) {
+          const exceeded = used - limit;
+          const title = 'Límite de Crédito Excedido';
+          const message = `Tu tarjeta "${card.name}" ha superado su límite por ${card.currency}${exceeded.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Saldo utilizado: ${card.currency}${used.toLocaleString()} de ${card.currency}${limit.toLocaleString()}.`;
+
+          const alreadyNotified = existingNotifs.some(n => n.cardId === card.id && n.type === 'over_credit_limit' && !n.isRead);
+          if (!alreadyNotified) {
+            notificationsToAdd.push({
+              id: 'notif_' + Date.now() + Math.random().toString(36).substr(2, 4),
+              cardId: card.id,
+              cardName: card.name,
+              type: 'over_credit_limit',
+              severity: 'danger',
+              title,
+              message,
+              isRead: false,
+              createdAt: new Date().toISOString()
+            });
+          }
+        } else if (usedPercent >= threshold) {
+          const roundedPercent = Math.round(usedPercent);
+          const title = `Alerta de Crédito (${roundedPercent}%)`;
+          const message = `Tu tarjeta "${card.name}" ha utilizado el ${roundedPercent}% de su límite de crédito disponible.`;
+
+          const alreadyNotified = existingNotifs.some(n => n.cardId === card.id && n.type === 'credit_threshold' && !n.isRead);
+          if (!alreadyNotified) {
+            notificationsToAdd.push({
+              id: 'notif_' + Date.now() + Math.random().toString(36).substr(2, 4),
+              cardId: card.id,
+              cardName: card.name,
+              type: 'credit_threshold',
+              severity: roundedPercent >= 95 ? 'danger' : 'warning',
+              title,
+              message,
+              isRead: false,
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
+      }
+    } else if (card.type === 'debit') {
+      const balance = card.currentBalance ?? 0;
+      if (balance < 0) {
+        const absNeg = Math.abs(balance);
+        if (card.allowOverdraft) {
+          const overdraftLimit = card.overdraftLimit || 0;
+          if (absNeg > overdraftLimit) {
+            const title = 'Límite de Sobregiro Excedido';
+            const message = `Tu tarjeta "${card.name}" superó el sobregiro permitido (${card.currency}${overdraftLimit.toLocaleString()}). Saldo negativo actual: -${card.currency}${absNeg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`;
+            const alreadyNotified = existingNotifs.some(n => n.cardId === card.id && n.type === 'overdraft' && !n.isRead);
+            if (!alreadyNotified) {
+              notificationsToAdd.push({
+                id: 'notif_' + Date.now() + Math.random().toString(36).substr(2, 4),
+                cardId: card.id,
+                cardName: card.name,
+                type: 'overdraft',
+                severity: 'danger',
+                title,
+                message,
+                isRead: false,
+                createdAt: new Date().toISOString()
+              });
+            }
+          } else {
+            const title = 'Cuenta en Sobregiro Autorizado';
+            const message = `Tu tarjeta de débito "${card.name}" está utilizando sobregiro. Saldo actual: -${card.currency}${absNeg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`;
+            const alreadyNotified = existingNotifs.some(n => n.cardId === card.id && n.type === 'overdraft' && !n.isRead);
+            if (!alreadyNotified) {
+              notificationsToAdd.push({
+                id: 'notif_' + Date.now() + Math.random().toString(36).substr(2, 4),
+                cardId: card.id,
+                cardName: card.name,
+                type: 'overdraft',
+                severity: 'warning',
+                title,
+                message,
+                isRead: false,
+                createdAt: new Date().toISOString()
+              });
+            }
+          }
+        } else {
+          const title = 'Saldo Negativo en Débito';
+          const message = `Tu tarjeta "${card.name}" presenta un saldo negativo de -${card.currency}${absNeg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sin sobregiro autorizado.`;
+          const alreadyNotified = existingNotifs.some(n => n.cardId === card.id && n.type === 'overdraft' && !n.isRead);
+          if (!alreadyNotified) {
+            notificationsToAdd.push({
+              id: 'notif_' + Date.now() + Math.random().toString(36).substr(2, 4),
+              cardId: card.id,
+              cardName: card.name,
+              type: 'overdraft',
+              severity: 'danger',
+              title,
+              message,
+              isRead: false,
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
+      } else if (card.minBalanceAlert && balance <= card.minBalanceAlert) {
+        const title = 'Alerta de Saldo Bajo';
+        const message = `El saldo de tu tarjeta "${card.name}" (${card.currency}${balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) está por debajo del mínimo configurado (${card.currency}${card.minBalanceAlert.toLocaleString()}).`;
+        const alreadyNotified = existingNotifs.some(n => n.cardId === card.id && n.type === 'low_balance' && !n.isRead);
+        if (!alreadyNotified) {
+          notificationsToAdd.push({
+            id: 'notif_' + Date.now() + Math.random().toString(36).substr(2, 4),
+            cardId: card.id,
+            cardName: card.name,
+            type: 'low_balance',
+            severity: 'warning',
+            title,
+            message,
+            isRead: false,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+    }
+
+    if (notificationsToAdd.length > 0) {
+      notificationsToAdd.forEach(notif => {
+        LocalRepository.addNotification(notif);
+        if (isCloudSynced && user) {
+          supabase.from('financial_notifications').insert({
+            id: notif.id,
+            user_id: user.id,
+            card_id: notif.cardId || null,
+            card_name: notif.cardName || null,
+            type: notif.type,
+            severity: notif.severity,
+            title: notif.title,
+            message: notif.message,
+            is_read: false
+          }).then(({ error }) => { if (error) console.error(error); });
+        }
+
+        // Native Web Notification API
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          try {
+            new Notification(notif.title, {
+              body: notif.message,
+              icon: '/icons/icon-192x192.png'
+            });
+          } catch (e) {
+            console.log('Web notification trigger error:', e);
+          }
+        }
+      });
+      setNotifications(LocalRepository.getNotifications());
+    }
+  };
+
+  const applyTransactionToCard = (
+    tx: { amount: number; type: 'income' | 'expense' | 'payment'; cardId?: string; destinationCardId?: string },
+    isRevert = false
+  ) => {
+    const factor = isRevert ? -1 : 1;
+    const currentCards = LocalRepository.getCards();
+    let updated = false;
+
+    // 1. Transaction made with or affecting cardId
+    if (tx.cardId) {
+      const card = currentCards.find(c => c.id === tx.cardId);
+      if (card) {
+        if (card.type === 'debit') {
+          if (tx.type === 'expense' || tx.type === 'payment') {
+            card.currentBalance = (card.currentBalance ?? 0) - (tx.amount * factor);
+            updated = true;
+          } else if (tx.type === 'income') {
+            card.currentBalance = (card.currentBalance ?? 0) + (tx.amount * factor);
+            updated = true;
+          }
+        } else if (card.type === 'credit') {
+          if (tx.type === 'expense') {
+            card.balanceUsed = (card.balanceUsed ?? 0) + (tx.amount * factor);
+            updated = true;
+          } else if (tx.type === 'income') {
+            card.balanceUsed = Math.max(0, (card.balanceUsed ?? 0) - (tx.amount * factor));
+            updated = true;
+          }
+        }
+        if (updated && !isRevert) {
+          checkAndTriggerCardAlerts(card);
+        }
+      }
+    }
+
+    // 2. Transaction that pays a destination credit card
+    if (tx.type === 'payment' && tx.destinationCardId) {
+      const destCard = currentCards.find(c => c.id === tx.destinationCardId);
+      if (destCard && destCard.type === 'credit') {
+        destCard.balanceUsed = Math.max(0, (destCard.balanceUsed ?? 0) - (tx.amount * factor));
+        updated = true;
+        if (!isRevert) {
+          checkAndTriggerCardAlerts(destCard);
+        }
+      }
+    }
+
+    if (updated) {
+      LocalRepository.saveCards(currentCards);
+      setCards([...currentCards]);
+      if (isCloudSynced && user) {
+        currentCards.forEach(c => syncCardToCloud(c));
+      }
+    }
+  };
+
   // --- Transaction Ops ---
   const addTransaction = async (txData: Omit<Transaction, 'id'>) => {
     const id = 'tx_' + Date.now() + Math.random().toString(36).substr(2, 4);
     const newTx: Transaction = { ...txData, id };
     
     LocalRepository.addTransaction(newTx);
+    applyTransactionToCard(newTx, false);
 
     if (isCloudSynced && user) {
       try {
@@ -491,6 +831,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           category_id: newTx.categoryId,
           subcategory_id: newTx.subcategoryId || null,
           account: newTx.account,
+          card_id: newTx.cardId || null,
+          destination_card_id: newTx.destinationCardId || null,
           date: newTx.date,
           time: newTx.time,
           notes: newTx.notes || null,
@@ -529,6 +871,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const oldTx = transactions.find(t => t.id === tx.id);
     LocalRepository.updateTransaction(tx);
 
+    if (oldTx) {
+      applyTransactionToCard(oldTx, true);
+    }
+    applyTransactionToCard(tx, false);
+
     if (isCloudSynced && user) {
       try {
         await supabase.from('transactions').update({
@@ -537,6 +884,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           category_id: tx.categoryId,
           subcategory_id: tx.subcategoryId || null,
           account: tx.account,
+          card_id: tx.cardId || null,
+          destination_card_id: tx.destinationCardId || null,
           date: tx.date,
           time: tx.time,
           notes: tx.notes || null,
@@ -592,6 +941,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteTransaction = async (id: string) => {
     const tx = transactions.find(t => t.id === id);
+    if (tx) {
+      applyTransactionToCard(tx, true);
+    }
     LocalRepository.deleteTransaction(id);
 
     if (isCloudSynced && user) {
@@ -621,6 +973,123 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     reloadAll();
+  };
+
+  // --- Card Ops ---
+  const addCard = (cardData: Omit<PaymentCard, 'id' | 'createdAt'>): string => {
+    const id = 'card_' + Date.now() + Math.random().toString(36).substr(2, 4);
+    const newCard: PaymentCard = {
+      ...cardData,
+      id,
+      createdAt: new Date().toISOString()
+    };
+    LocalRepository.addCard(newCard);
+    syncCardToCloud(newCard);
+    checkAndTriggerCardAlerts(newCard);
+    setCards(LocalRepository.getCards());
+    return id;
+  };
+
+  const updateCard = (card: PaymentCard) => {
+    LocalRepository.updateCard(card);
+    syncCardToCloud(card);
+    checkAndTriggerCardAlerts(card);
+    setCards(LocalRepository.getCards());
+  };
+
+  const deleteCard = async (id: string) => {
+    LocalRepository.deleteCard(id);
+    if (isCloudSynced && user) {
+      try {
+        await supabase.from('cards').delete().eq('id', id);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    setCards(LocalRepository.getCards());
+  };
+
+  const toggleCardActive = (id: string) => {
+    const card = cards.find(c => c.id === id);
+    if (card) {
+      const updated = { ...card, isActive: !card.isActive };
+      updateCard(updated);
+    }
+  };
+
+  const recordCardPayment = (params: {
+    destinationCardId: string;
+    sourceCardId?: string;
+    amount: number;
+    date: string;
+    time: string;
+    notes?: string;
+  }) => {
+    const currentCards = LocalRepository.getCards();
+    const destCard = currentCards.find(c => c.id === params.destinationCardId);
+    const sourceCard = params.sourceCardId ? currentCards.find(c => c.id === params.sourceCardId) : undefined;
+
+    const paymentTx: Omit<Transaction, 'id'> = {
+      amount: params.amount,
+      type: 'payment',
+      categoryId: 'cat_bills',
+      account: sourceCard ? sourceCard.name : 'Efectivo',
+      cardId: params.sourceCardId,
+      destinationCardId: params.destinationCardId,
+      date: params.date,
+      time: params.time,
+      notes: params.notes || `Pago a tarjeta ${destCard ? destCard.name : ''}`,
+      color: destCard?.color || '#4f46e5',
+      icon: 'CreditCard'
+    };
+
+    addTransaction(paymentTx);
+  };
+
+  // --- Notification Ops ---
+  const markNotificationRead = (id: string) => {
+    LocalRepository.markNotificationAsRead(id);
+    if (isCloudSynced && user) {
+      supabase.from('financial_notifications').update({ is_read: true }).eq('id', id).then();
+    }
+    setNotifications(LocalRepository.getNotifications());
+  };
+
+  const markAllNotificationsRead = () => {
+    LocalRepository.markAllNotificationsAsRead();
+    if (isCloudSynced && user) {
+      supabase.from('financial_notifications').update({ is_read: true }).eq('user_id', user.id).then();
+    }
+    setNotifications(LocalRepository.getNotifications());
+  };
+
+  const deleteNotification = (id: string) => {
+    LocalRepository.deleteNotification(id);
+    if (isCloudSynced && user) {
+      supabase.from('financial_notifications').delete().eq('id', id).then();
+    }
+    setNotifications(LocalRepository.getNotifications());
+  };
+
+  const clearAllNotifications = () => {
+    LocalRepository.clearNotifications();
+    if (isCloudSynced && user) {
+      supabase.from('financial_notifications').delete().eq('user_id', user.id).then();
+    }
+    setNotifications([]);
+  };
+
+  const requestNotificationPermission = async (): Promise<NotificationPermission | null> => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        const perm = await Notification.requestPermission();
+        return perm;
+      } catch (e) {
+        console.warn('Error requesting notification permission:', e);
+        return null;
+      }
+    }
+    return null;
   };
 
   // --- Category Ops ---
@@ -1067,6 +1536,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         profile,
         recurring,
         debts,
+        cards,
+        notifications,
         isAuthenticated,
         setAuthenticated,
         isOnboarded: localIsOnboarded || !!user,
@@ -1084,6 +1555,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addTransaction,
         updateTransaction,
         deleteTransaction,
+        addCard,
+        updateCard,
+        deleteCard,
+        toggleCardActive,
+        recordCardPayment,
+        markNotificationRead,
+        markAllNotificationsRead,
+        deleteNotification,
+        clearAllNotifications,
+        requestNotificationPermission,
         addCategory,
         updateCategory,
         deleteCategory,

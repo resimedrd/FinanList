@@ -39,7 +39,7 @@ export class StatsService {
           availableCash += val;
           if (isCurrentMonth) monthlyIncome += val;
         }
-      } else {
+      } else if (tx.type === 'expense') {
         if (!isInvestmentAcc) {
           totalBalance -= val;
           availableCash -= val;
@@ -49,6 +49,12 @@ export class StatsService {
               monthlySavings += val;
             }
           }
+        }
+      } else if (tx.type === 'payment') {
+        // A credit card payment paid from cash/debit card reduces available cash without counting as living expense
+        if (!isInvestmentAcc) {
+          totalBalance -= val;
+          availableCash -= val;
         }
       }
     });
@@ -174,7 +180,7 @@ export class StatsService {
         const monthIndex = txDate.getMonth();
         if (tx.type === 'income') {
           results[monthIndex].income += tx.amount;
-        } else {
+        } else if (tx.type === 'expense') {
           results[monthIndex].expense += tx.amount;
         }
       }
@@ -250,7 +256,7 @@ export class StatsService {
         if (index >= 0 && index < daysLength) {
           if (tx.type === 'income') {
             results[index].income += tx.amount;
-          } else {
+          } else if (tx.type === 'expense') {
             results[index].expense += tx.amount;
           }
         }

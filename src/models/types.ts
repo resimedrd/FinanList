@@ -6,13 +6,57 @@ export interface Category {
   icon: string;      // Lucide icon name
 }
 
+export type CardType = 'debit' | 'credit';
+
+export interface PaymentCard {
+  id: string;
+  name: string;                // e.g. "BHD Débito", "Visa Oro Banreservas"
+  bank: string;                // e.g. "Banco BHD", "Banreservas", "Banco Popular"
+  type: CardType;              // 'debit' | 'credit'
+  lastFourDigits?: string;     // e.g. "4589" (only 4 digits, never CVV or full card number!)
+  currency: string;            // e.g. "RD$", "$", "€"
+  color: string;               // Card theme / gradient color
+  isActive: boolean;           // Active or inactive
+
+  // Debit card specific fields
+  initialBalance?: number;     // Starting balance
+  currentBalance?: number;     // Current available balance for debit
+  minBalanceAlert?: number;    // Configurable minimum balance threshold (e.g. 5000)
+  allowOverdraft?: boolean;    // Allow calculated negative balance or overdraft
+  overdraftLimit?: number;     // Maximum authorized overdraft limit
+
+  // Credit card specific fields
+  creditLimit?: number;        // Total credit limit approved
+  balanceUsed?: number;        // Total amount spent / balance used
+  alertThresholdPercent?: number; // Configurable alert threshold: 80, 90, 100 (%)
+  billingCutoffDay?: number;   // Día de corte (1-31)
+  paymentDueDay?: number;      // Día límite de pago (1-31)
+
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface FinancialNotification {
+  id: string;
+  cardId?: string;
+  cardName?: string;
+  type: 'low_balance' | 'overdraft' | 'credit_threshold' | 'over_credit_limit' | 'info';
+  severity: 'warning' | 'danger' | 'info';
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 export interface Transaction {
   id: string;
   amount: number;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'payment';
   categoryId: string;
   subcategoryId?: string;
-  account: string;      // e.g., "Efectivo", "Tarjeta Crédito", "Ahorros"
+  account: string;      // e.g., "Efectivo", "Tarjeta", "Banco"
+  cardId?: string;      // Associated PaymentCard ID if paid with card
+  destinationCardId?: string; // For card payments: which credit card received the payment
   date: string;         // YYYY-MM-DD
   time: string;         // HH:MM
   notes?: string;

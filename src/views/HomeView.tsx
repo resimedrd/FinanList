@@ -5,6 +5,7 @@ import { PdfReportService } from '../services/PdfReportService';
 import { DonutChart } from '../components/DonutChart';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { Transaction, Budget } from '../models/types';
+import { NotificationCenter } from '../components/NotificationCenter';
 
 interface HomeViewProps {
   onOpenTransactionModal: (editTx?: Transaction, defaultType?: 'income' | 'expense') => void;
@@ -20,7 +21,9 @@ const FINANCE_QUOTES = [
 ];
 
 export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) => {
-  const { transactions, budgets, profile, deleteTransaction, addTransaction, categories, setActiveTab, stealthMode, setStealthMode, goals, debts } = useApp();
+  const { transactions, budgets, profile, deleteTransaction, addTransaction, categories, setActiveTab, stealthMode, setStealthMode, goals, debts, cards, notifications } = useApp();
+  const [showNotificationCenter, setShowNotificationCenter] = React.useState<boolean>(false);
+  const unreadNotifsCount = notifications.filter(n => !n.isRead).length;
   // Check if monthly budget report should appear automatically (strictly on Day 1 of each month)
   const getMonthlyBudgetReportStatus = () => {
     const now = new Date();
@@ -320,7 +323,47 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
               Hola de nuevo, <b>{profile.name}</b>
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Notification Center Bell */}
+            <button
+              onClick={() => setShowNotificationCenter(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: unreadNotifsCount > 0 ? 'var(--color-primary)' : 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '6px',
+                position: 'relative'
+              }}
+              title="Centro de Notificaciones"
+            >
+              <DynamicIcon name="Bell" size={20} />
+              {unreadNotifsCount > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '2px',
+                  right: '2px',
+                  backgroundColor: 'var(--color-danger)',
+                  color: '#ffffff',
+                  fontSize: '9px',
+                  fontWeight: '800',
+                  borderRadius: '10px',
+                  minWidth: '15px',
+                  height: '15px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '0 3px',
+                  boxShadow: '0 0 0 2px var(--bg-phone)'
+                }}>
+                  {unreadNotifsCount > 9 ? '9+' : unreadNotifsCount}
+                </span>
+              )}
+            </button>
+
             <button
               onClick={() => setStealthMode(!stealthMode)}
               style={{
@@ -442,9 +485,16 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         <h1 style={styles.balanceValue}>{formatVal(summary.totalBalance)}</h1>
 
         {/* Dinero en Efectivo, Tarjeta y Banco debajo del saldo total */}
+        {/* Dinero en Efectivo, Tarjeta y Banco debajo del saldo total */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '-10px', marginBottom: '2px' }}>
           <span style={styles.availableBadge}>💵 Efectivo: {formatAccountVal(cashBalance)}</span>
-          <span style={styles.availableBadge}>💳 Tarjeta: {formatAccountVal(cardBalance)}</span>
+          <span 
+            style={{ ...styles.availableBadge, cursor: 'pointer', border: '1px solid rgba(99, 102, 241, 0.35)' }}
+            onClick={() => setActiveTab('cards')}
+            title="Ver y Gestionar Mis Tarjetas"
+          >
+            💳 Tarjetas: {cards.length > 0 ? `${cards.filter(c => c.isActive).length} activas` : formatAccountVal(cardBalance)} ➔
+          </span>
           <span style={styles.availableBadge}>🏦 Banco: {formatAccountVal(bankBalance)}</span>
         </div>
 
@@ -492,6 +542,19 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         >
           <DynamicIcon name="Plus" size={16} />
           <span>Añadir Ingreso</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('cards')}
+          style={{
+            ...styles.actionBtn,
+            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+            color: '#6366f1',
+            border: '1px solid rgba(99, 102, 241, 0.25)',
+            gridColumn: 'span 2'
+          }}
+        >
+          <DynamicIcon name="CreditCard" size={16} color="#6366f1" />
+          <span>Mis Tarjetas y Métodos de Pago ({cards.filter(c => c.isActive).length})</span>
         </button>
       </div>
 
@@ -877,6 +940,12 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           </div>
         </div>
       )}
+
+      {/* Notification Center Portal Modal */}
+      <NotificationCenter
+        isOpen={showNotificationCenter}
+        onClose={() => setShowNotificationCenter(false)}
+      />
     </div>
   );
 };

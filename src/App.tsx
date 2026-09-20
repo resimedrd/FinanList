@@ -13,6 +13,7 @@ import { DynamicIcon } from './components/DynamicIcon';
 import { Transaction } from './models/types';
 import { WelcomeTour } from './components/WelcomeTour';
 import { InstallPrompt } from './components/InstallPrompt';
+import { CardsView } from './views/CardsView';
 
 const MainLayout: React.FC = () => {
   const { isAuthenticated, activeTab, setActiveTab, isOnboarded, profile, setAuthenticated, authLoading } = useApp();
@@ -173,6 +174,8 @@ const MainLayout: React.FC = () => {
         return <StatsView />;
       case 'profile':
         return <ProfileView onTriggerWelcomeTour={() => setShowWelcomeTour(true)} />;
+      case 'cards':
+        return <CardsView onBack={() => setActiveTab('home')} />;
       default:
         return <HomeView onOpenTransactionModal={handleOpenTransactionModal} />;
     }

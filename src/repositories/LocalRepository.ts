@@ -1,4 +1,4 @@
-import { Category, Transaction, Budget, SavingGoal, UserProfile, RecurringTransaction, Debt } from '../models/types';
+import { Category, Transaction, Budget, SavingGoal, UserProfile, RecurringTransaction, Debt, PaymentCard, FinancialNotification } from '../models/types';
 
 // Key names for localStorage
 const KEYS = {
@@ -9,7 +9,44 @@ const KEYS = {
   PROFILE: 'finanlist_profile',
   RECURRING: 'finanlist_recurring',
   DEBTS: 'finanlist_debts',
+  CARDS: 'finanlist_cards',
+  NOTIFICATIONS: 'finanlist_notifications',
 };
+
+const DEFAULT_CARDS: PaymentCard[] = [
+  {
+    id: 'card_debit_default',
+    name: 'BHD Débito Nómina',
+    bank: 'Banco BHD',
+    type: 'debit',
+    lastFourDigits: '4120',
+    currency: 'RD$',
+    color: '#059669', // Emerald
+    isActive: true,
+    initialBalance: 15000,
+    currentBalance: 15000,
+    minBalanceAlert: 3000,
+    allowOverdraft: false,
+    overdraftLimit: 0,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'card_credit_default',
+    name: 'Banreservas Visa Oro',
+    bank: 'Banreservas',
+    type: 'credit',
+    lastFourDigits: '8834',
+    currency: 'RD$',
+    color: '#4f46e5', // Indigo
+    isActive: true,
+    creditLimit: 50000,
+    balanceUsed: 6500,
+    alertThresholdPercent: 80,
+    billingCutoffDay: 15,
+    paymentDueDay: 5,
+    createdAt: new Date().toISOString()
+  }
+];
 
 // Seed Data
 const DEFAULT_CATEGORIES: Category[] = [
@@ -243,6 +280,13 @@ export class LocalRepository {
         console.error("Migration error: ", e);
       }
     }
+
+    if (!localStorage.getItem(KEYS.CARDS)) {
+      localStorage.setItem(KEYS.CARDS, JSON.stringify(DEFAULT_CARDS));
+    }
+    if (!localStorage.getItem(KEYS.NOTIFICATIONS)) {
+      localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
+    }
   }
 
   // Seed data explicitly for Demo Mode
@@ -250,6 +294,8 @@ export class LocalRepository {
     localStorage.setItem(KEYS.PROFILE, JSON.stringify(DEFAULT_PROFILE));
     localStorage.setItem(KEYS.GOALS, JSON.stringify(DEFAULT_GOALS));
     localStorage.setItem(KEYS.BUDGETS, JSON.stringify(DEFAULT_BUDGETS));
+    localStorage.setItem(KEYS.CARDS, JSON.stringify(DEFAULT_CARDS));
+    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
     
     // Seed transactions using dates relative to current month/year
     const currentYear = new Date().getFullYear();
@@ -481,6 +527,80 @@ export class LocalRepository {
     this.saveDebts(filtered);
   }
 
+  // --- Payment Cards ---
+  static getCards(): PaymentCard[] {
+    this.init();
+    const data = localStorage.getItem(KEYS.CARDS);
+    return data ? JSON.parse(data) : [];
+  }
+
+  static saveCards(list: PaymentCard[]) {
+    localStorage.setItem(KEYS.CARDS, JSON.stringify(list));
+  }
+
+  static addCard(card: PaymentCard) {
+    const list = this.getCards();
+    list.push(card);
+    this.saveCards(list);
+  }
+
+  static updateCard(card: PaymentCard) {
+    const list = this.getCards();
+    const index = list.findIndex(c => c.id === card.id);
+    if (index !== -1) {
+      list[index] = card;
+      this.saveCards(list);
+    }
+  }
+
+  static deleteCard(id: string) {
+    const list = this.getCards();
+    const filtered = list.filter(c => c.id !== id);
+    this.saveCards(filtered);
+  }
+
+  // --- Financial Notifications ---
+  static getNotifications(): FinancialNotification[] {
+    this.init();
+    const data = localStorage.getItem(KEYS.NOTIFICATIONS);
+    return data ? JSON.parse(data) : [];
+  }
+
+  static saveNotifications(list: FinancialNotification[]) {
+    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(list));
+  }
+
+  static addNotification(notif: FinancialNotification) {
+    const list = this.getNotifications();
+    list.unshift(notif); // Newest first
+    this.saveNotifications(list);
+  }
+
+  static markNotificationAsRead(id: string) {
+    const list = this.getNotifications();
+    const item = list.find(n => n.id === id);
+    if (item) {
+      item.isRead = true;
+      this.saveNotifications(list);
+    }
+  }
+
+  static markAllNotificationsAsRead() {
+    const list = this.getNotifications();
+    list.forEach(n => { n.isRead = true; });
+    this.saveNotifications(list);
+  }
+
+  static deleteNotification(id: string) {
+    const list = this.getNotifications();
+    const filtered = list.filter(n => n.id !== id);
+    this.saveNotifications(filtered);
+  }
+
+  static clearNotifications() {
+    this.saveNotifications([]);
+  }
+
   // --- Backup and Import/Export ---
   static exportDataRaw(): string {
     const fullBackup = {
@@ -491,7 +611,9 @@ export class LocalRepository {
       profile: this.getProfile(),
       recurring: this.getRecurring(),
       debts: this.getDebts(),
-      version: '1.0.0',
+      cards: this.getCards(),
+      notifications: this.getNotifications(),
+      version: '1.1.0',
       exportedAt: new Date().toISOString()
     };
     return JSON.stringify(fullBackup);
@@ -508,6 +630,12 @@ export class LocalRepository {
         localStorage.setItem(KEYS.PROFILE, JSON.stringify(data.profile));
         localStorage.setItem(KEYS.RECURRING, JSON.stringify(data.recurring || []));
         localStorage.setItem(KEYS.DEBTS, JSON.stringify(data.debts || []));
+        if (data.cards) {
+          localStorage.setItem(KEYS.CARDS, JSON.stringify(data.cards));
+        }
+        if (data.notifications) {
+          localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(data.notifications));
+        }
         return true;
       }
       return false;

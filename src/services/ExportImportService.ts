@@ -19,7 +19,7 @@ export class ExportImportService {
       tx.id,
       tx.date,
       tx.time,
-      tx.type === 'income' ? 'Ingreso' : 'Gasto',
+      tx.type === 'income' ? 'Ingreso' : tx.type === 'payment' ? 'Pago Tarjeta' : 'Gasto',
       tx.amount.toString(),
       tx.categoryId.replace('cat_', ''),
       tx.account,
@@ -45,6 +45,7 @@ export class ExportImportService {
           th, td { border: 1px solid #e4e4e7; padding: 8px; font-family: sans-serif; text-align: left; }
           .income { color: #22c55e; }
           .expense { color: #ef4444; }
+          .payment { color: #6366f1; }
         </style>
       </head>
       <body>
@@ -67,12 +68,13 @@ export class ExportImportService {
     `;
 
     transactions.forEach(tx => {
-      const isIncome = tx.type === 'income';
+      const typeLabel = tx.type === 'income' ? 'Ingreso' : tx.type === 'payment' ? 'Pago Tarjeta' : 'Gasto';
+      const typeClass = tx.type === 'income' ? 'income' : tx.type === 'payment' ? 'payment' : 'expense';
       html += `
         <tr>
           <td>${tx.date}</td>
           <td>${tx.time}</td>
-          <td class="${isIncome ? 'income' : 'expense'}">${isIncome ? 'Ingreso' : 'Gasto'}</td>
+          <td class="${typeClass}">${typeLabel}</td>
           <td>${tx.categoryId.replace('cat_', '')}</td>
           <td>${tx.account}</td>
           <td><b>${tx.amount.toFixed(2)}</b></td>
@@ -263,7 +265,7 @@ export class ExportImportService {
                     </div>
                   </td>
                   <td style="text-align: right;" class="amount ${tx.type}">
-                    ${tx.type === 'income' ? '+' : '-'}${currency}${tx.amount.toFixed(2)}
+                    ${tx.type === 'income' ? '+' : tx.type === 'payment' ? '💳 ' : '-'}${currency}${tx.amount.toFixed(2)}
                   </td>
                 </tr>
               `).join('')}

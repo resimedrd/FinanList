@@ -13,13 +13,14 @@ interface TransactionModalProps {
 }
 
 export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onClose, editTransaction, defaultType }) => {
-  const { categories, addTransaction, updateTransaction, profile, addCategory } = useApp();
+  const { categories, addTransaction, updateTransaction, profile, addCategory, cards, setActiveTab } = useApp();
 
   const [amount, setAmount] = useState<string>('');
-  const [type, setType] = useState<'income' | 'expense'>('expense');
+  const [type, setType] = useState<'income' | 'expense' | 'payment'>('expense');
   const [selectedCatId, setSelectedCatId] = useState<string>('');
   const [selectedSubCatId, setSelectedSubCatId] = useState<string>('');
   const [account, setAccount] = useState<string>('Tarjeta');
+  const [cardId, setCardId] = useState<string | undefined>(undefined);
   const [date, setDate] = useState<string>('');
   const [time, setTime] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -68,6 +69,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
         setSelectedCatId(editTransaction.categoryId);
         setSelectedSubCatId(editTransaction.subcategoryId || '');
         setAccount(editTransaction.account);
+        setCardId(editTransaction.cardId);
         setDate(editTransaction.date);
         setTime(editTransaction.time);
         setNotes(editTransaction.notes || '');
@@ -82,7 +84,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
         setType(defaultType || 'expense');
         setSelectedCatId('');
         setSelectedSubCatId('');
-        setAccount('Tarjeta');
+
+        const activeCards = cards.filter(c => c.isActive);
+        if (activeCards.length > 0) {
+          setCardId(activeCards[0].id);
+          setAccount(activeCards[0].name);
+        } else {
+          setCardId(undefined);
+          setAccount('Efectivo');
+        }
         
         const now = new Date();
         setDate(now.toISOString().split('T')[0]);
@@ -96,7 +106,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
         setShowAdvanced(false);
       }
     }
-  }, [isOpen, editTransaction, defaultType]);
+  }, [isOpen, editTransaction, defaultType, cards]);
 
   // Filter categories by type
   const isIncomeCat = (catId: string) => ['cat_sal', 'cat_inv', 'cat_extra'].includes(catId);
@@ -154,12 +164,16 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
       .map(t => t.trim().toLowerCase())
       .filter(t => t.length > 0);
 
+    const selectedCard = cardId ? cards.find(c => c.id === cardId) : undefined;
+    const finalAccount = selectedCard ? selectedCard.name : (account || 'Efectivo');
+
     const transactionData = {
       amount: numAmount,
       type,
       categoryId: selectedCatId,
       subcategoryId: selectedSubCatId || undefined,
-      account,
+      account: finalAccount,
+      cardId: selectedCard ? selectedCard.id : undefined,
       date,
       time,
       notes: notes || undefined,
@@ -235,24 +249,102 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
           />
         </div>
 
-        {/* Account selection horizontal scroll */}
+        {/* Payment Method / Card Selection */}
         <div className="input-group">
-          <label className="input-label">Cuenta de Pago</label>
-          <div style={styles.horizontalScroll}>
-            {['Efectivo', 'Tarjeta', 'Banco'].map(acc => (
-              <button
-                key={acc}
-                onClick={() => setAccount(acc)}
-                style={{
-                  ...styles.scrollItem,
-                  backgroundColor: account === acc ? 'var(--color-primary-light)' : 'var(--bg-card)',
-                  borderColor: account === acc ? 'var(--color-primary)' : 'var(--border-color)',
-                  color: account === acc ? 'var(--color-primary)' : 'var(--text-primary)',
-                }}
-              >
-                {acc}
-              </button>
-            ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <label className="input-label" style={{ margin: 0 }}>Método de Pago / Tarjeta Utilizada</label>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                setActiveTab('cards');
+              }}
+              style={{
+                fontSize: '11px',
+                color: 'var(--color-primary)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: '600'
+              }}
+            >
+              ⚙️ Mis Tarjetas
+            </button>
+          </div>
+
+          <div style={{ ...styles.horizontalScroll, paddingBottom: '4px' }}>
+            {/* Cash option */}
+            <button
+              type="button"
+              onClick={() => {
+                setCardId(undefined);
+                setAccount('Efectivo');
+              }}
+              style={{
+                ...styles.scrollItem,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 14px',
+                borderRadius: '12px',
+                backgroundColor: !cardId ? 'var(--color-primary-light)' : 'var(--bg-card)',
+                borderColor: !cardId ? 'var(--color-primary)' : 'var(--border-color)',
+                color: !cardId ? 'var(--color-primary)' : 'var(--text-primary)',
+                fontWeight: !cardId ? '700' : '500',
+              }}
+            >
+              <DynamicIcon name="Coins" size={16} />
+              <span>Efectivo / Sin Tarjeta</span>
+            </button>
+
+            {/* Registered Cards */}
+            {cards.filter(c => c.isActive || c.id === cardId).map(c => {
+              const isSelected = cardId === c.id;
+              const isCredit = c.type === 'credit';
+              return (
+                <button
+                  type="button"
+                  key={c.id}
+                  onClick={() => {
+                    setCardId(c.id);
+                    setAccount(c.name);
+                  }}
+                  style={{
+                    ...styles.scrollItem,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 14px',
+                    borderRadius: '12px',
+                    backgroundColor: isSelected ? 'var(--color-primary-light)' : 'var(--bg-card)',
+                    borderColor: isSelected ? 'var(--color-primary)' : 'var(--border-color)',
+                    color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)',
+                    fontWeight: isSelected ? '700' : '500',
+                    borderLeft: `4px solid ${c.color || (isCredit ? '#4f46e5' : '#059669')}`
+                  }}
+                >
+                  <DynamicIcon name="CreditCard" size={16} color={c.color || (isCredit ? '#4f46e5' : '#059669')} />
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '700' }}>{c.name}</span>
+                      <span style={{
+                        fontSize: '9px',
+                        padding: '1px 5px',
+                        borderRadius: '4px',
+                        fontWeight: '700',
+                        backgroundColor: isCredit ? 'rgba(79, 70, 229, 0.15)' : 'rgba(5, 150, 105, 0.15)',
+                        color: isCredit ? '#6366f1' : '#10b981'
+                      }}>
+                        {isCredit ? 'CRÉDITO' : 'DÉBITO'}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                      {c.bank} {c.lastFourDigits ? `(••• ${c.lastFourDigits})` : ''}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 

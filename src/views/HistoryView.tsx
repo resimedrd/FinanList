@@ -228,7 +228,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
           <div style={styles.filterItem}>
             <span style={styles.filterLabel}>Tipo de Movimiento</span>
             <div style={styles.filterOptions}>
-              {['all', 'income', 'expense'].map(t => (
+              {['all', 'income', 'expense', 'payment'].map(t => (
                 <button
                   key={t}
                   onClick={() => setSelectedType(t as any)}
@@ -239,7 +239,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
                     color: selectedType === t ? 'var(--color-primary)' : 'var(--text-primary)',
                   }}
                 >
-                  {t === 'all' ? 'Todos' : t === 'income' ? 'Ingresos' : 'Gastos'}
+                  {t === 'all' ? 'Todos' : t === 'income' ? 'Ingresos' : t === 'expense' ? 'Gastos' : 'Pagos de Tarjeta'}
                 </button>
               ))}
             </div>
@@ -463,8 +463,15 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div className={`tx-amount ${tx.type}`} style={{ fontSize: '13px', fontWeight: '700' }}>
-                              {tx.type === 'income' ? '+' : '-'}{profile.currency}{tx.amount.toFixed(2)}
+                            <div
+                              className={`tx-amount ${tx.type}`}
+                              style={{
+                                fontSize: '13px',
+                                fontWeight: '700',
+                                color: tx.type === 'income' ? 'var(--color-success)' : tx.type === 'payment' ? '#6366f1' : 'var(--color-danger)'
+                              }}
+                            >
+                              {tx.type === 'income' ? '+' : tx.type === 'payment' ? '💳 ' : '-'}{profile.currency}{tx.amount.toFixed(2)}
                             </div>
                             <button
                               onClick={(e) => handleDeleteTx(tx.id, e)}
