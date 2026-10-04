@@ -55,11 +55,11 @@ self.addEventListener('fetch', (event) => {
   // Skip browser extensions or non-http protocols
   if (!url.protocol.startsWith('http')) return;
 
-  // Bypass cache for Supabase or external APIs to avoid serving stale financial records
-  if (url.hostname.includes('supabase.co')) {
+  // Bypass cache for Appwrite, Supabase or external APIs to avoid serving stale financial records
+  if (url.hostname.includes('appwrite.io') || url.pathname.startsWith('/v1/') || url.hostname.includes('supabase.co')) {
     event.respondWith(
       fetch(request).catch(() => {
-        // When offline, Supabase requests will fail gracefully and the app falls back to LocalRepository
+        // When offline, API requests will fail gracefully and the app falls back to LocalRepository
         return new Response(JSON.stringify({ offline: true, error: 'Network unavailable' }), {
           status: 503,
           headers: { 'Content-Type': 'application/json' }

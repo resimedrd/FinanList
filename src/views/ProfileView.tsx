@@ -3,6 +3,8 @@ import { useApp } from '../context/AppContext';
 import { ExportImportService } from '../services/ExportImportService';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { Category, RecurringTransaction } from '../models/types';
+import { hashPin } from '../utils/securityUtils';
+import { compressImageFile } from '../utils/imageUtils';
 
 // Predefined accents for a premium UI
 const ACCENT_COLORS = [
@@ -71,7 +73,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
   const [accentColor, setAccentColor] = useState<string>(profile.accentColor);
   
   // Security
-  const [pinCode, setPinCode] = useState<string>(profile.pinCode || '');
+  const [pinCode, setPinCode] = useState<string>('');
+  const [isPinChanged, setIsPinChanged] = useState<boolean>(false);
   const [stealthModeEnabled, setStealthModeEnabled] = useState<boolean>(!!profile.stealthModeEnabled);
 
 
@@ -202,7 +205,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
     }
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     if (!username.trim()) {
       alert('Por favor, ingresa un nombre de usuario.');
       return;
@@ -211,7 +214,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
       alert('Por favor, ingresa un correo electrónico válido.');
       return;
     }
-    updateProfile({
+
+    let finalPinCode: string | undefined = profile.pinCode;
+    if (isPinChanged) {
+      if (pinCode.length === 4) {
+        finalPinCode = await hashPin(pinCode);
+      } else if (pinCode.length === 0) {
+        finalPinCode = undefined;
+      } else {
+        alert('El código PIN debe tener exactamente 4 dígitos.');
+        return;
+      }
+    }
+
+    await updateProfile({
       name,
       username: username.trim().toLowerCase(),
       email: email.trim().toLowerCase(),
@@ -220,7 +236,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
       language,
       theme,
       accentColor,
-      pinCode: pinCode || undefined,
+      pinCode: finalPinCode,
       biometricsEnabled: false,
       stealthModeEnabled: stealthModeEnabled
     });
@@ -228,17 +244,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
   };
 
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
+      try {
+        const compressed = await compressImageFile(file, 256, 256, 0.8);
         updateProfile({
           ...profile,
-          avatar: reader.result as string
+          avatar: compressed
         });
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.warn('[ProfileView] Avatar compression failed, falling back to direct reader:', err);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          updateProfile({
+            ...profile,
+            avatar: reader.result as string
+          });
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -489,17 +514,49 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
         <span style={styles.cardTitle}>Seguridad y Bloqueo</span>
 
         <div className="input-group">
-          <label className="input-label">Código PIN de Acceso (4 dígitos)</label>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <label className="input-label" style={{ marginBottom: 0 }}>Código PIN de Acceso (4 dígitos)</label>
+            {profile.pinCode && !isPinChanged && (
+              <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 600 }}>● PIN Activo (Cifrado)</span>
+            )}
+          </div>
           <input
             type="password"
             maxLength={4}
             pattern="\d*"
             inputMode="numeric"
-            placeholder="Introduce código PIN de bloqueo"
+            placeholder={profile.pinCode ? "Escribe 4 dígitos para cambiar el PIN" : "Introduce código PIN de bloqueo (4 dígitos)"}
             value={pinCode}
-            onChange={(e) => setPinCode(e.target.value.replace(/\D/g, ''))}
+            onChange={(e) => {
+              setIsPinChanged(true);
+              setPinCode(e.target.value.replace(/\D/g, ''));
+            }}
             className="input-field"
           />
+          {profile.pinCode && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                {isPinChanged && pinCode.length === 4 ? 'Nuevo PIN listo para guardar' : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPinChanged(true);
+                  setPinCode('');
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#ef4444',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                Desactivar PIN de bloqueo
+              </button>
+            </div>
+          )}
         </div>
 
         <div style={styles.toggleRow}>

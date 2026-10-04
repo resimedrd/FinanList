@@ -3,7 +3,31 @@ import { useApp } from '../context/AppContext';
 import { DynamicIcon } from './DynamicIcon';
 import { Transaction } from '../models/types';
 import { LocalRepository } from '../repositories/LocalRepository';
+import { compressImageFile } from '../utils/imageUtils';
 
+
+type CardImpact =
+  | {
+      isCredit: true;
+      currentDebt: number;
+      projectedDebt: number;
+      currentAvailable: number;
+      projectedAvailable: number;
+      isOverLimit: boolean;
+      creditLimit: number;
+      currency: string;
+      isOverdraftExceeded?: never;
+    }
+  | {
+      isCredit: false;
+      currentBalance: number;
+      projectedBalance: number;
+      isNegative: boolean;
+      isOverdraftExceeded: boolean;
+      allowOverdraft?: boolean;
+      currency: string;
+      isOverLimit?: never;
+    };
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -27,6 +51,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
   const [tagsInput, setTagsInput] = useState<string>('');
   const [favorite, setFavorite] = useState<boolean>(false);
   const [suggestedCatId, setSuggestedCatId] = useState<string>('');
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   
   // Advanced fields
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
@@ -120,14 +145,20 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
     }
   }, [type, filteredCategories, selectedCatId]);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setReceiptPhoto(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImageFile(file, 1024, 1024, 0.7);
+        setReceiptPhoto(compressed);
+      } catch (err) {
+        console.warn('[TransactionModal] Image compression failed, falling back to direct reader:', err);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setReceiptPhoto(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -146,7 +177,60 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
     }
   };
 
-  const handleSave = () => {
+  const selectedCard = cardId ? cards.find(c => c.id === cardId) : undefined;
+  const numAmountVal = parseFloat(amount) || 0;
+
+  // Real-time projected balance calculation for the selected card
+  const getCardImpact = (): CardImpact | null => {
+    if (!selectedCard) return null;
+
+    if (selectedCard.type === 'credit') {
+      const currentDebt = selectedCard.balanceUsed ?? 0;
+      const creditLimit = selectedCard.creditLimit ?? 0;
+      const currentAvailable = Math.max(0, creditLimit - currentDebt);
+
+      const projectedDebt = type === 'expense'
+        ? currentDebt + numAmountVal
+        : Math.max(0, currentDebt - numAmountVal);
+      
+      const projectedAvailable = Math.max(0, creditLimit - projectedDebt);
+      const isOverLimit = projectedDebt > creditLimit;
+
+      return {
+        isCredit: true,
+        currentDebt,
+        projectedDebt,
+        currentAvailable,
+        projectedAvailable,
+        isOverLimit,
+        creditLimit,
+        currency: selectedCard.currency || profile.currency
+      };
+    } else {
+      const currentBalance = selectedCard.currentBalance ?? 0;
+      const projectedBalance = type === 'expense'
+        ? currentBalance - numAmountVal
+        : currentBalance + numAmountVal;
+      
+      const isNegative = projectedBalance < 0;
+      const overdraftLimit = selectedCard.overdraftLimit ?? 0;
+      const isOverdraftExceeded = isNegative && (!selectedCard.allowOverdraft || Math.abs(projectedBalance) > overdraftLimit);
+
+      return {
+        isCredit: false,
+        currentBalance,
+        projectedBalance,
+        isNegative,
+        isOverdraftExceeded,
+        allowOverdraft: selectedCard.allowOverdraft,
+        currency: selectedCard.currency || profile.currency
+      };
+    }
+  };
+
+  const cardImpact = getCardImpact();
+
+  const handleSave = async () => {
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) {
       alert('Por favor, ingresa un monto válido.');
@@ -164,7 +248,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
       .map(t => t.trim().toLowerCase())
       .filter(t => t.length > 0);
 
-    const selectedCard = cardId ? cards.find(c => c.id === cardId) : undefined;
     const finalAccount = selectedCard ? selectedCard.name : (account || 'Efectivo');
 
     const transactionData = {
@@ -185,16 +268,25 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
       favorite
     };
 
-    if (editTransaction) {
-      updateTransaction({
-        ...editTransaction,
-        ...transactionData
-      });
-    } else {
-      addTransaction(transactionData);
-    }
+    if (isSaving) return;
 
-    onClose();
+    try {
+      setIsSaving(true);
+      if (editTransaction) {
+        await updateTransaction({
+          ...editTransaction,
+          ...transactionData
+        });
+      } else {
+        await addTransaction(transactionData);
+      }
+      onClose();
+    } catch (err) {
+      console.error('Error saving transaction:', err);
+      alert('Hubo un error al guardar el movimiento. Por favor intenta de nuevo.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -346,6 +438,67 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
               );
             })}
           </div>
+
+          {/* Dynamic real-time feedback on card balance / credit limit */}
+          {cardImpact && (
+            <div style={{
+              marginTop: '10px',
+              padding: '10px 12px',
+              borderRadius: '10px',
+              backgroundColor: cardImpact.isOverLimit || cardImpact.isOverdraftExceeded
+                ? 'var(--color-danger-light)'
+                : 'var(--bg-card)',
+              border: `1px solid ${
+                cardImpact.isOverLimit || cardImpact.isOverdraftExceeded
+                  ? 'rgba(239, 68, 68, 0.4)'
+                  : 'var(--border-color)'
+              }`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              fontSize: '11px'
+            }}>
+              {cardImpact.isCredit ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Crédito disponible:</span>
+                    <span style={{ fontWeight: '700', color: cardImpact.isOverLimit ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                      {cardImpact.currency}{cardImpact.currentAvailable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ➔ {cardImpact.currency}{cardImpact.projectedAvailable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Deuda tarjeta:</span>
+                    <span style={{ fontWeight: '700', color: 'var(--color-danger)' }}>
+                      {cardImpact.currency}{cardImpact.currentDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ➔ {cardImpact.currency}{cardImpact.projectedDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  {cardImpact.isOverLimit && (
+                    <div style={{ color: 'var(--color-danger)', fontWeight: '700', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span>⚠️ Este gasto superará el límite de crédito disponible.</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Saldo en cuenta débito:</span>
+                    <span style={{ fontWeight: '700', color: cardImpact.isNegative ? 'var(--color-danger)' : 'var(--text-primary)' }}>
+                      {cardImpact.currency}{cardImpact.currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ➔ {cardImpact.currency}{cardImpact.projectedBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  {cardImpact.isOverdraftExceeded ? (
+                    <div style={{ color: 'var(--color-danger)', fontWeight: '700', fontSize: '10px' }}>
+                      🚨 Excede el saldo disponible (sobregiro no permitido o límite rebasado).
+                    </div>
+                  ) : cardImpact.isNegative && cardImpact.allowOverdraft ? (
+                    <div style={{ color: 'var(--color-warning)', fontWeight: '600', fontSize: '10px' }}>
+                      ⚠️ Esta compra utilizará saldo de sobregiro autorizado.
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Category selection */}
@@ -664,8 +817,17 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
           </div>
         )}
 
-        <button className="btn btn-primary" onClick={handleSave} style={{ marginTop: '10px' }}>
-          {editTransaction ? 'Guardar Cambios' : 'Registrar Movimiento'}
+        <button 
+          className="btn btn-primary" 
+          onClick={handleSave} 
+          disabled={isSaving}
+          style={{ 
+            marginTop: '10px',
+            opacity: isSaving ? 0.7 : 1,
+            cursor: isSaving ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {isSaving ? 'Guardando...' : (editTransaction ? 'Guardar Cambios' : 'Registrar Movimiento')}
         </button>
       </div>
     </div>

@@ -107,7 +107,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
   const quoteIdx = new Date().getDate() % FINANCE_QUOTES.length;
   const quoteOfTheDay = FINANCE_QUOTES[quoteIdx];
 
-  const summary = StatsService.getSummary(transactions, budgets);
+  const summary = StatsService.getSummary(transactions, budgets, cards);
   const chartData = StatsService.getExpenseByCategory(transactions);
   
   // Format Currency Helper (with Stealth support)
@@ -115,35 +115,6 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
     if (stealthMode) return `${profile.currency} ••••`;
     return `${profile.currency}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
-
-  // Get cash, card, bank, and investments balances
-  const getAccountBalances = () => {
-    let cash = 0;
-    let card = 0;
-    let bank = 0;
-    let investments = 0;
-    transactions.forEach(tx => {
-      const amt = tx.amount;
-      const isExpense = tx.type === 'expense';
-      const acc = tx.account ? tx.account.trim().toLowerCase() : '';
-      if (acc.includes('efectivo')) {
-        if (isExpense) cash -= amt;
-        else cash += amt;
-      } else if (acc.includes('tarjeta')) {
-        if (isExpense) card -= amt;
-        else card += amt;
-      } else if (acc.includes('banco')) {
-        if (isExpense) bank -= amt;
-        else bank += amt;
-      } else if (acc.includes('broker') || acc.includes('inversiones')) {
-        if (isExpense) investments -= amt;
-        else investments += amt;
-      }
-    });
-    return { cash, card, bank, investments };
-  };
-
-  const { cash: cashBalance, card: cardBalance, bank: bankBalance } = getAccountBalances();
 
   const formatAccountVal = (val: number) => {
     if (stealthMode) return '••••';
@@ -480,22 +451,48 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
       {/* Hero Balance Card */}
       <div className="card" style={styles.balanceHero}>
         <div style={styles.balanceHeader}>
-          <span>Saldo Total</span>
+          <span>Saldo Total Consolidado</span>
+          <span style={{ fontSize: '11px', fontWeight: '500', color: 'var(--text-muted)' }}>
+            Patrimonio Líquido
+          </span>
         </div>
-        <h1 style={styles.balanceValue}>{formatVal(summary.totalBalance)}</h1>
+        <h1 style={styles.balanceValue}>{formatVal(summary.consolidatedNetBalance)}</h1>
 
-        {/* Dinero en Efectivo, Tarjeta y Banco debajo del saldo total */}
-        {/* Dinero en Efectivo, Tarjeta y Banco debajo del saldo total */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '-10px', marginBottom: '2px' }}>
-          <span style={styles.availableBadge}>💵 Efectivo: {formatAccountVal(cashBalance)}</span>
+        {/* Desglose consolidado: Efectivo, Banco, Deuda de Tarjetas y Crédito */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '-8px', marginBottom: '4px' }}>
+          <span style={styles.availableBadge} title="Dinero en efectivo físico disponible">
+            💵 Efectivo: {formatAccountVal(summary.cashBalance)}
+          </span>
+          <span style={styles.availableBadge} title="Saldo en cuentas bancarias y tarjetas de débito">
+            🏦 Banco: {formatAccountVal(summary.bankBalance)}
+          </span>
+          {summary.totalCreditCardDebt > 0 && (
+            <span 
+              style={{
+                ...styles.availableBadge,
+                backgroundColor: 'var(--color-danger-light)',
+                color: 'var(--color-danger)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                fontWeight: '700'
+              }}
+              title="Deuda acumulada en tarjetas de crédito (pasivo)"
+            >
+              💳 Deuda Tarjetas: -{formatAccountVal(summary.totalCreditCardDebt)}
+            </span>
+          )}
           <span 
-            style={{ ...styles.availableBadge, cursor: 'pointer', border: '1px solid rgba(99, 102, 241, 0.35)' }}
+            style={{ 
+              ...styles.availableBadge, 
+              cursor: 'pointer', 
+              border: '1px solid rgba(99, 102, 241, 0.35)',
+              backgroundColor: 'rgba(99, 102, 241, 0.08)',
+              color: '#6366f1'
+            }}
             onClick={() => setActiveTab('cards')}
             title="Ver y Gestionar Mis Tarjetas"
           >
-            💳 Tarjetas: {cards.length > 0 ? `${cards.filter(c => c.isActive).length} activas` : formatAccountVal(cardBalance)} ➔
+            💳 {cards.length > 0 ? `${cards.filter(c => c.isActive).length} tarjetas activas` : 'Tarjetas'} ➔
           </span>
-          <span style={styles.availableBadge}>🏦 Banco: {formatAccountVal(bankBalance)}</span>
         </div>
 
         <div style={styles.inOutGrid}>

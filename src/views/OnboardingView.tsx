@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { DynamicIcon } from '../components/DynamicIcon';
+import { hashPin } from '../utils/securityUtils';
 
 export const OnboardingView: React.FC = () => {
   const { signUp, signIn, updateProfile } = useApp();
@@ -66,10 +67,13 @@ export const OnboardingView: React.FC = () => {
     setErrorMsg('');
 
     try {
-      // 1. Create account on Supabase
+      // 1. Create account on Appwrite
       await signUp(email.trim(), password, name.trim(), username.trim());
       
-      // 2. Set profile custom preferences
+      // 2. Hash PIN if provided
+      const hashedPin = pin ? await hashPin(pin) : undefined;
+
+      // 3. Set profile custom preferences
       await updateProfile({
         name: name.trim(),
         username: username.trim().toLowerCase(),
@@ -79,7 +83,7 @@ export const OnboardingView: React.FC = () => {
         language: 'es',
         theme,
         accentColor,
-        pinCode: pin || undefined,
+        pinCode: hashedPin,
         biometricsEnabled: false
       });
 

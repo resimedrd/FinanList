@@ -31,6 +31,15 @@ const MainLayout: React.FC = () => {
       document.documentElement.classList.remove('dark');
     }
 
+    // Dynamic Meta Theme-Color & Root Background Sync for iOS Safari / PWA
+    const themeBg = isDark ? '#09090b' : '#ffffff';
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', themeBg);
+    }
+    document.documentElement.style.backgroundColor = themeBg;
+    document.body.style.backgroundColor = themeBg;
+
     // Apply accent color
     if (profile.accentColor) {
       document.documentElement.style.setProperty('--color-primary', profile.accentColor);
@@ -181,7 +190,7 @@ const MainLayout: React.FC = () => {
     }
   };
 
-  // If session is still verifying/hydrating from Supabase, show a branded loading screen
+  // If session is still verifying/hydrating from Appwrite, show a branded loading screen
   if (authLoading) {
     return (
       <div className="phone-viewport" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#09090b' }}>

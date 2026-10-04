@@ -1,29 +1,78 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { DynamicIcon } from '../components/DynamicIcon';
+import {
+  verifyPin,
+  isLegacyPlaintextPin,
+  hashPin,
+  checkPinLockout,
+  recordFailedPinAttempt,
+  resetPinLockout,
+  type LockoutState
+} from '../utils/securityUtils';
 
 export const LockScreen: React.FC = () => {
-  const { profile, setAuthenticated } = useApp();
+  const { profile, setAuthenticated, updateProfile } = useApp();
   const [pin, setPin] = useState<string>('');
   const [shake, setShake] = useState<boolean>(false);
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [lockout, setLockout] = useState<LockoutState>(() => checkPinLockout());
   const targetPin = profile.pinCode || '1234';
 
-  const handleKeyPress = (num: string) => {
+  // Lockout countdown timer
+  useEffect(() => {
+    if (!lockout.isLocked) return;
+
+    const timer = setInterval(() => {
+      const updated = checkPinLockout();
+      setLockout(updated);
+      if (!updated.isLocked) {
+        clearInterval(timer);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [lockout.isLocked]);
+
+  const handleKeyPress = async (num: string) => {
+    if (lockout.isLocked || isVerifying) return;
+
     if (pin.length < 4) {
       const nextPin = pin + num;
       setPin(nextPin);
       
       // Auto submit if length is 4
       if (nextPin.length === 4) {
-        if (nextPin === targetPin) {
+        setIsVerifying(true);
+        const isMatch = await verifyPin(nextPin, targetPin);
+
+        if (isMatch) {
+          resetPinLockout();
+
+          // Transparent migration from legacy plaintext PIN to PBKDF2 hash
+          if (isLegacyPlaintextPin(targetPin)) {
+            try {
+              const hashed = await hashPin(nextPin);
+              await updateProfile({
+                ...profile,
+                pinCode: hashed,
+              });
+            } catch (err) {
+              console.error('[LockScreen] Error migrating PIN to PBKDF2:', err);
+            }
+          }
+
           setTimeout(() => {
             setAuthenticated(true);
+            setIsVerifying(false);
           }, 150);
         } else {
-          // Mismatch shake
+          const newLockout = recordFailedPinAttempt();
+          setLockout(newLockout);
           setTimeout(() => {
             setShake(true);
             setPin('');
+            setIsVerifying(false);
             setTimeout(() => setShake(false), 500);
           }, 200);
         }
@@ -32,14 +81,14 @@ export const LockScreen: React.FC = () => {
   };
 
   const handleBackspace = () => {
+    if (lockout.isLocked || isVerifying) return;
     setPin(pin.slice(0, -1));
   };
-
-
 
   // Listen to physical keyboard events for digits and backspace
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (lockout.isLocked || isVerifying) return;
       if (e.key >= '0' && e.key <= '9') {
         handleKeyPress(e.key);
       } else if (e.key === 'Backspace') {
@@ -48,18 +97,27 @@ export const LockScreen: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pin]);
-
+  }, [pin, lockout.isLocked, isVerifying]);
 
   return (
     <div className="lockscreen-container" style={styles.container}>
       <div className="lockscreen-header" style={styles.header}>
         <div className="lock-icon" style={styles.lockIcon}>
-          <DynamicIcon name="Lock" size={24} color="var(--color-primary)" />
+          <DynamicIcon name="Lock" size={24} color={lockout.isLocked ? 'var(--color-danger)' : 'var(--color-primary)'} />
         </div>
         <h2 style={styles.appName}>Finanlist</h2>
         <p style={styles.subtitle}>¡Hola, @{profile.username || 'usuario'}!</p>
-        <p style={{ ...styles.subtitle, fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>Introduce tu PIN para ingresar</p>
+        {lockout.isLocked ? (
+          <p style={{ ...styles.subtitle, fontSize: '12px', marginTop: '6px', color: 'var(--color-danger)', fontWeight: 600 }}>
+            Demasiados intentos fallidos. Espera {lockout.remainingSeconds}s
+          </p>
+        ) : (
+          <p style={{ ...styles.subtitle, fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
+            {lockout.failedAttempts > 0 && lockout.failedAttempts < 3
+              ? `PIN incorrecto (${3 - lockout.failedAttempts} ${3 - lockout.failedAttempts === 1 ? 'intento restante' : 'intentos restantes'})`
+              : 'Introduce tu PIN para ingresar'}
+          </p>
+        )}
       </div>
 
       {/* PIN Dot Indicators */}
@@ -87,7 +145,12 @@ export const LockScreen: React.FC = () => {
             key={num}
             onClick={() => handleKeyPress(String(num))}
             className="pin-btn"
-            style={styles.keyButton}
+            disabled={lockout.isLocked || isVerifying}
+            style={{
+              ...styles.keyButton,
+              opacity: lockout.isLocked || isVerifying ? 0.4 : 1,
+              cursor: lockout.isLocked || isVerifying ? 'not-allowed' : 'pointer'
+            }}
           >
             {num}
           </button>
@@ -96,12 +159,29 @@ export const LockScreen: React.FC = () => {
         {/* Action Keys */}
         <div style={styles.keyButtonAction} />
 
-
-        <button onClick={() => handleKeyPress('0')} className="pin-btn" style={styles.keyButton}>
+        <button
+          onClick={() => handleKeyPress('0')}
+          className="pin-btn"
+          disabled={lockout.isLocked || isVerifying}
+          style={{
+            ...styles.keyButton,
+            opacity: lockout.isLocked || isVerifying ? 0.4 : 1,
+            cursor: lockout.isLocked || isVerifying ? 'not-allowed' : 'pointer'
+          }}
+        >
           0
         </button>
 
-        <button onClick={handleBackspace} className="pin-btn" style={styles.keyButtonAction}>
+        <button
+          onClick={handleBackspace}
+          className="pin-btn"
+          disabled={lockout.isLocked || isVerifying}
+          style={{
+            ...styles.keyButtonAction,
+            opacity: lockout.isLocked || isVerifying ? 0.4 : 1,
+            cursor: lockout.isLocked || isVerifying ? 'not-allowed' : 'pointer'
+          }}
+        >
           <DynamicIcon name="Delete" size={24} color="var(--text-primary)" />
         </button>
       </div>

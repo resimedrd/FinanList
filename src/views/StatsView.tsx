@@ -17,9 +17,12 @@ export const StatsView: React.FC = () => {
   const cashFlowTrend = StatsService.getCashFlowTrends(transactions);
   const insights = StatsService.getFinancialInsights(transactions, budgets, profile.currency);
 
-  // 50/30/20 Rule Calculator
+  // 50/30/20 Rule Calculator (Calculado sobre el mes actual para métricas representativas)
   const getBudgetRuleBreakdown = () => {
-    const totalIncome = transactions
+    const currentYM = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    const monthlyTxs = transactions.filter(t => t.date && t.date.substring(0, 7) === currentYM);
+
+    const totalIncome = monthlyTxs
       .filter(t => t.type === 'income')
       .reduce((sum, t) => sum + t.amount, 0);
 
@@ -27,19 +30,48 @@ export const StatsView: React.FC = () => {
     let wants = 0;
     let savings = 0;
 
-    transactions.forEach(t => {
+    monthlyTxs.forEach(t => {
       if (t.type === 'expense') {
-        const catId = t.categoryId;
-        if (catId === 'cat_saving' || catId === 'cat_inv') {
+        const catId = t.categoryId || '';
+        const catObj = categories.find(c => c.id === catId);
+        const parentId = catObj?.parentId || '';
+        const catNameLower = (catObj?.name || '').toLowerCase();
+
+        // 1. Ahorro / Inversión (20%)
+        if (
+          catId === 'cat_saving' ||
+          catId === 'cat_inv' ||
+          t.notes?.includes('#goal:') ||
+          catNameLower.includes('ahorro') ||
+          catNameLower.includes('inversi')
+        ) {
           savings += t.amount;
-        } else if (
-          catId === 'cat_food_super' || 
-          catId === 'cat_services' || 
-          catId === 'cat_rent' || 
-          catId === 'cat_transport'
+        }
+        // 2. Necesidades básicas (50%)
+        else if (
+          catId === 'cat_food_super' ||
+          catId === 'cat_bills' ||
+          catId === 'cat_trans' ||
+          catId === 'cat_health' ||
+          catId === 'cat_emergency' ||
+          parentId === 'cat_trans' ||
+          catNameLower.includes('supermercado') ||
+          catNameLower.includes('comida') ||
+          catNameLower.includes('servicio') ||
+          catNameLower.includes('transporte') ||
+          catNameLower.includes('gasolina') ||
+          catNameLower.includes('salud') ||
+          catNameLower.includes('farmacia') ||
+          catNameLower.includes('alquiler') ||
+          catNameLower.includes('renta') ||
+          catNameLower.includes('luz') ||
+          catNameLower.includes('agua') ||
+          catNameLower.includes('internet')
         ) {
           needs += t.amount;
-        } else {
+        }
+        // 3. Deseos y gastos discrecionales (30%)
+        else {
           wants += t.amount;
         }
       }
@@ -73,14 +105,14 @@ export const StatsView: React.FC = () => {
     score = Math.max(10, Math.min(100, Math.round(score)));
 
     return {
-      needs,
-      wants,
-      savings,
+      needs: Math.round(needs * 100) / 100,
+      wants: Math.round(wants * 100) / 100,
+      savings: Math.round(savings * 100) / 100,
       needsPct,
       wantsPct,
       savingsPct,
-      totalSpent,
-      totalIncome,
+      totalSpent: Math.round(totalSpent * 100) / 100,
+      totalIncome: Math.round(totalIncome * 100) / 100,
       score,
       status,
       recommendation

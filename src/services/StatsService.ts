@@ -1,4 +1,6 @@
-import { Transaction, Budget } from '../models/types';
+import { Transaction, Budget, PaymentCard } from '../models/types';
+import { parseLocalDate, getDaysInMonth } from '../utils/dateUtils';
+import { FinancialEngine } from './FinancialEngine';
 
 export class StatsService {
   // Get date info
@@ -12,96 +14,42 @@ export class StatsService {
   }
 
   // Calculates standard dashboard statistics
-  static getSummary(transactions: Transaction[], budgets: Budget[], dateFilter?: (dateStr: string) => boolean): {
+  static getSummary(
+    transactions: Transaction[],
+    budgets: Budget[],
+    cards: PaymentCard[] = [],
+    dateFilter?: (dateStr: string) => boolean
+  ): {
     totalBalance: number;
     availableCash: number;
     monthlyIncome: number;
     monthlyExpense: number;
     monthlySavings: number;
     budgetProgress: number; // overall percentage
+    consolidatedNetBalance: number;
+    totalCreditCardDebt: number;
+    totalCreditAvailable: number;
+    totalCreditLimit: number;
+    cashBalance: number;
+    bankBalance: number;
+    investmentsBalance: number;
   } {
-    const currentYM = this.getCurrentYearMonth();
-    
-    let totalBalance = 0;
-    let availableCash = 0;
-    let monthlyIncome = 0;
-    let monthlyExpense = 0;
-    let monthlySavings = 0;
-
-    transactions.forEach(tx => {
-      const val = tx.amount;
-      const isCurrentMonth = dateFilter ? dateFilter(tx.date) : (this.getYearMonth(tx.date) === currentYM);
-      const isInvestmentAcc = tx.account === 'Broker' || tx.account === 'Inversiones';
-
-      if (tx.type === 'income') {
-        if (!isInvestmentAcc) {
-          totalBalance += val;
-          availableCash += val;
-          if (isCurrentMonth) monthlyIncome += val;
-        }
-      } else if (tx.type === 'expense') {
-        if (!isInvestmentAcc) {
-          totalBalance -= val;
-          availableCash -= val;
-          if (isCurrentMonth) {
-            monthlyExpense += val;
-            if (tx.categoryId === 'cat_saving') {
-              monthlySavings += val;
-            }
-          }
-        }
-      } else if (tx.type === 'payment') {
-        // A credit card payment paid from cash/debit card reduces available cash without counting as living expense
-        if (!isInvestmentAcc) {
-          totalBalance -= val;
-          availableCash -= val;
-        }
-      }
-    });
-
-    // Budget progress
-    // We take the total monthly budget amount and see what % has been consumed by expenses in its active period
-    const monthlyTotalBudget = budgets.find(b => b.type === 'monthly');
-    let budgetProgress = 0;
-    if (monthlyTotalBudget && monthlyTotalBudget.amount > 0) {
-      // Find category budget ids active
-      const activeCategoryBudgetIds = new Set(
-        budgets.filter(x => x.type === 'category' && x.categoryId).map(x => x.categoryId)
-      );
-      // Filter expenses: exclude active category budgets and savings goals (cat_saving) within monthly budget period
-      const generalExpenses = transactions
-        .filter(tx => tx.type === 'expense' && 
-                      tx.date >= monthlyTotalBudget.startDate && 
-                      tx.date <= monthlyTotalBudget.endDate && 
-                      !activeCategoryBudgetIds.has(tx.categoryId) && 
-                      tx.categoryId !== 'cat_saving')
-        .reduce((sum, tx) => sum + tx.amount, 0);
-
-      budgetProgress = Math.min(100, (generalExpenses / monthlyTotalBudget.amount) * 100);
-    } else {
-      // If no global budget is set, calculate sum of category budgets
-      const catBudgets = budgets.filter(b => b.type === 'category');
-      const totalCatBudget = catBudgets.reduce((sum, b) => sum + b.amount, 0);
-      if (totalCatBudget > 0) {
-        // find expenses matching those categories in their active periods
-        let totalMatchedExpense = 0;
-        catBudgets.forEach(b => {
-          const matchedExpense = transactions
-            .filter(tx => tx.type === 'expense' && tx.date >= b.startDate && tx.date <= b.endDate && tx.categoryId === b.categoryId)
-            .reduce((sum, tx) => sum + tx.amount, 0);
-          totalMatchedExpense += matchedExpense;
-        });
-        budgetProgress = Math.min(100, (totalMatchedExpense / totalCatBudget) * 100);
-      }
-    }
+    const summary = FinancialEngine.calculateSummary(transactions, cards, budgets, dateFilter);
 
     return {
-      totalBalance,
-      availableCash,
-      monthlyIncome,
-      monthlyExpense,
-      monthlySavings,
-      budgetProgress
+      totalBalance: summary.consolidatedNetBalance,
+      availableCash: summary.availableLiquidCash,
+      monthlyIncome: summary.monthlyIncome,
+      monthlyExpense: summary.monthlyExpense,
+      monthlySavings: summary.monthlySavings,
+      budgetProgress: summary.budgetProgress,
+      consolidatedNetBalance: summary.consolidatedNetBalance,
+      totalCreditCardDebt: summary.totalCreditCardDebt,
+      totalCreditAvailable: summary.totalCreditAvailable,
+      totalCreditLimit: summary.totalCreditLimit,
+      cashBalance: summary.cashBalance,
+      bankBalance: summary.bankBalance,
+      investmentsBalance: summary.investmentsBalance
     };
   }
 
@@ -175,13 +123,15 @@ export class StatsService {
     const results = months.map(name => ({ monthName: name, income: 0, expense: 0 }));
 
     transactions.forEach(tx => {
-      const txDate = new Date(tx.date);
-      if (txDate.getFullYear() === currentYear) {
-        const monthIndex = txDate.getMonth();
-        if (tx.type === 'income') {
-          results[monthIndex].income += tx.amount;
-        } else if (tx.type === 'expense') {
-          results[monthIndex].expense += tx.amount;
+      const { year: txYear, month: txMonth } = parseLocalDate(tx.date);
+      if (txYear === currentYear) {
+        const monthIndex = txMonth - 1;
+        if (monthIndex >= 0 && monthIndex < 12) {
+          if (tx.type === 'income') {
+            results[monthIndex].income += tx.amount;
+          } else if (tx.type === 'expense') {
+            results[monthIndex].expense += tx.amount;
+          }
         }
       }
     });
@@ -233,7 +183,7 @@ export class StatsService {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
-    const totalDays = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const totalDays = getDaysInMonth(currentYear, currentMonth + 1);
     
     const startDay = startDayRange || 1;
     const endDay = endDayRange || totalDays;
@@ -250,7 +200,7 @@ export class StatsService {
     const filteredTxs = transactions.filter(tx => dateFilter ? dateFilter(tx.date) : (this.getYearMonth(tx.date) === currentYM));
 
     filteredTxs.forEach(tx => {
-      const day = new Date(tx.date).getDate();
+      const day = parseLocalDate(tx.date).day;
       if (day >= startDay && day <= endDay) {
         const index = day - startDay;
         if (index >= 0 && index < daysLength) {

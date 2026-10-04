@@ -1,4 +1,5 @@
 import React from 'react';
+import { getDaysInMonth } from '../utils/dateUtils';
 
 // --- BAR CHART COMPONENT (INCOME VS EXPENSE) ---
 interface BarChartProps {
@@ -159,8 +160,9 @@ export const CashFlowLineChart: React.FC<LineChartProps> = ({ data, currency, st
   // Let's calculate the average daily delta
   const dailyDelta = lastRealDay > 1 ? lastRealBalance / lastRealDay : lastRealBalance;
   
-  // Predict until the end of the month (e.g. 30 days)
-  const totalDaysInMonth = 30;
+  // Predict until the end of the month (actual days in current month)
+  const now = new Date();
+  const totalDaysInMonth = getDaysInMonth(now.getFullYear(), now.getMonth() + 1);
   const projectionPoints: Array<{ day: number; balance: number }> = [...data];
 
   if (lastRealDay < totalDaysInMonth) {
@@ -315,7 +317,7 @@ export const CashFlowLineChart: React.FC<LineChartProps> = ({ data, currency, st
           fontWeight="600"
           textAnchor="end"
         >
-          Día 30 (Fin)
+          Día {totalDaysInMonth} (Fin)
         </text>
       </svg>
     </div>

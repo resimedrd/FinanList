@@ -12,7 +12,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
 
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [selectedType, setSelectedType] = useState<'all' | 'income' | 'expense'>('all');
+  const [selectedType, setSelectedType] = useState<'all' | 'income' | 'expense' | 'payment'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedAccount, setSelectedAccount] = useState<string>('all');
   const [onlyFavorites, setOnlyFavorites] = useState<boolean>(false);

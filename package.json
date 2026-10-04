@@ -6,14 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "setup:appwrite": "node scripts/setup-appwrite.cjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.108.2",
+    "appwrite": "^28.1.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.400.0",
-    "pg": "^8.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -22,6 +23,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "typescript": "^5.5.3",
-    "vite": "^5.4.1"
+    "vite": "^5.4.1",
+    "vitest": "^1.6.0"
   }
 }

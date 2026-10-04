@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Transaction, Category, Budget, SavingGoal, UserProfile, RecurringTransaction, Debt, PaymentCard, FinancialNotification } from '../models/types';
 import { LocalRepository } from '../repositories/LocalRepository';
-import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
-import { User } from '@supabase/supabase-js';
+import { AppwriteService, AppwriteUser } from '../services/AppwriteService';
+import { isAppwriteConfigured } from '../services/appwriteClient';
+import { createLocalDate, formatLocalDateISO } from '../utils/dateUtils';
 
 interface AppContextType {
   transactions: Transaction[];
@@ -20,8 +21,8 @@ interface AppContextType {
   activeTab: 'home' | 'history' | 'budget' | 'stats' | 'profile' | 'cards';
   setActiveTab: (tab: 'home' | 'history' | 'budget' | 'stats' | 'profile' | 'cards') => void;
   
-  // Supabase specific
-  user: User | null;
+  // Appwrite specific
+  user: AppwriteUser | null;
   isCloudSynced: boolean;
   authLoading: boolean;
   signUp: (email: string, pass: string, name: string, username: string) => Promise<any>;
@@ -32,9 +33,9 @@ interface AppContextType {
   changePassword: (currentPass: string, newPass: string) => Promise<void>;
 
   // CRUD Ops
-  addTransaction: (tx: Omit<Transaction, 'id'>) => void;
-  updateTransaction: (tx: Transaction) => void;
-  deleteTransaction: (id: string) => void;
+  addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<void>;
+  updateTransaction: (tx: Transaction) => Promise<void>;
+  deleteTransaction: (id: string) => Promise<void>;
   
   // Card Ops
   addCard: (cardData: Omit<PaymentCard, 'id' | 'createdAt'>) => string;
@@ -94,10 +95,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cards, setCards] = useState<PaymentCard[]>(() => LocalRepository.getCards());
   const [notifications, setNotifications] = useState<FinancialNotification[]>(() => LocalRepository.getNotifications());
   
-  // Supabase auth state
-  const [user, setUser] = useState<User | null>(null);
+  // Appwrite auth state
+  const [user, setUser] = useState<AppwriteUser | null>(null);
   const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
-  const [authLoading, setAuthLoading] = useState<boolean>(() => isSupabaseConfigured);
+  const [authLoading, setAuthLoading] = useState<boolean>(() => isAppwriteConfigured);
 
   const [localIsOnboarded, setLocalIsOnboarded] = useState<boolean>(() => {
     return localStorage.getItem('finanlist_onboarded') === 'true';
@@ -127,320 +128,215 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications(LocalRepository.getNotifications());
   };
 
-  // Sync Supabase Authentication
+  // Sync Appwrite Authentication
   useEffect(() => {
-    if (!isSupabaseConfigured) {
+    if (!isAppwriteConfigured) {
       setAuthLoading(false);
       return;
     }
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const activeUser = session?.user ?? null;
-      setUser(activeUser);
-      setIsCloudSynced(!!activeUser);
-      if (activeUser) {
-        localStorage.setItem('finanlist_onboarded', 'true');
-        setLocalIsOnboarded(true);
-        try {
-          await loadAllFromCloud(activeUser.id);
-        } finally {
+    AppwriteService.getCurrentUser()
+      .then(async (activeUser) => {
+        setUser(activeUser);
+        setIsCloudSynced(!!activeUser);
+        if (activeUser) {
+          localStorage.setItem('finanlist_onboarded', 'true');
+          setLocalIsOnboarded(true);
+          try {
+            await loadAllFromCloud(activeUser.id);
+          } finally {
+            setAuthLoading(false);
+          }
+        } else {
           setAuthLoading(false);
         }
-      } else {
+      })
+      .catch(() => {
         setAuthLoading(false);
-      }
-    }).catch(() => {
-      setAuthLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const activeUser = session?.user ?? null;
-      setUser(activeUser);
-      setIsCloudSynced(!!activeUser);
-      if (activeUser) {
-        localStorage.setItem('finanlist_onboarded', 'true');
-        setLocalIsOnboarded(true);
-        loadAllFromCloud(activeUser.id);
-      } else {
-        reloadAll();
-      }
-      setAuthLoading(false);
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
+      });
   }, []);
 
-  // Fetch all user records from Supabase PostgreSQL tables
+  // --- Transaction & Card Cloud Synchronization Helpers ---
+  const syncTransactionToCloud = async (tx: Transaction, userId: string) => {
+    if (!isAppwriteConfigured) return;
+    try {
+      await AppwriteService.syncTransaction(tx, userId);
+    } catch (err) {
+      console.warn('[Appwrite Sync] Unexpected transaction sync error:', err);
+    }
+  };
+
+  const syncCardToCloud = async (card: PaymentCard, targetUserId?: string) => {
+    const uid = targetUserId || user?.id;
+    if (!uid || !isAppwriteConfigured) return;
+    try {
+      await AppwriteService.syncCard(card, uid);
+    } catch (e) {
+      console.warn('Error syncing card to Appwrite:', e);
+    }
+  };
+
+  // Fetch all user records from Appwrite collections
   const loadAllFromCloud = async (userId: string) => {
     try {
       // 1. Profile
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-      
-      let localPin = '';
-      if (profileData) {
-        localPin = profileData.pin_code || '';
-        const loadedProfile: UserProfile = {
-          name: profileData.name,
-          username: profileData.username,
-          email: profileData.email,
-          avatar: '',
-          currency: profileData.currency,
-          language: 'es',
-          theme: profileData.theme as any,
-          accentColor: profileData.accent_color,
-          pinCode: profileData.pin_code || undefined,
-          biometricsEnabled: false,
-          stealthModeEnabled: profileData.stealth_mode_enabled
-        };
+      const loadedProfile = await AppwriteService.getProfile(userId);
+      if (loadedProfile) {
         setProfile(loadedProfile);
         LocalRepository.saveProfile(loadedProfile);
-        setAuthenticated(!localPin);
+        setAuthenticated(!loadedProfile.pinCode);
       }
 
       // 2. Categories
-      const { data: catData } = await supabase.from('categories').select('*');
-      if (catData && catData.length > 0) {
-        const loadedCats = catData.map(c => ({
-          id: c.id,
-          name: c.name,
-          parentId: c.parent_id || undefined,
-          color: c.color,
-          icon: c.icon
-        }));
+      const loadedCats = await AppwriteService.listCategories(userId);
+      if (loadedCats && loadedCats.length > 0) {
         setCategories(loadedCats);
         LocalRepository.saveCategories(loadedCats);
       }
 
-      // 3. Transactions
-      const { data: txData } = await supabase
-        .from('transactions')
-        .select('*')
-        .order('date', { ascending: false })
-        .order('time', { ascending: false });
-      if (txData) {
-        const loadedTxs = txData.map(t => ({
-          id: t.id,
-          amount: parseFloat(t.amount),
-          type: t.type as any,
-          categoryId: t.category_id,
-          subcategoryId: t.subcategory_id || undefined,
-          account: t.account,
-          cardId: t.card_id || undefined,
-          destinationCardId: t.destination_card_id || undefined,
-          date: t.date,
-          time: t.time,
-          notes: t.notes || undefined,
-          tags: t.tags || [],
-          color: t.color,
-          icon: t.icon,
-          favorite: !!t.favorite
-        }));
-        setTransactions(loadedTxs);
-        LocalRepository.saveTransactions(loadedTxs);
+      // 3. Transactions (Non-destructive reconciliation)
+      try {
+        const loadedTxs = await AppwriteService.listTransactions(userId);
+        if (loadedTxs && loadedTxs.length > 0) {
+          const localTxs = LocalRepository.getTransactions();
+          const cloudTxIds = new Set(loadedTxs.map(t => t.id));
+          const unsyncedLocalTxs = localTxs.filter(t => !cloudTxIds.has(t.id));
+
+          const mergedTxs = [...loadedTxs, ...unsyncedLocalTxs];
+          mergedTxs.sort((a, b) => {
+            const dateComp = b.date.localeCompare(a.date);
+            if (dateComp !== 0) return dateComp;
+            return (b.time || '').localeCompare(a.time || '');
+          });
+
+          setTransactions(mergedTxs);
+          LocalRepository.saveTransactions(mergedTxs);
+
+          // Push any unsynced local transactions to cloud in background
+          if (unsyncedLocalTxs.length > 0 && userId) {
+            unsyncedLocalTxs.forEach(tx => {
+              syncTransactionToCloud(tx, userId);
+            });
+          }
+        }
+      } catch (txEx) {
+        console.warn('Exception loading transactions from Appwrite:', txEx);
       }
 
       // 4. Budgets
-      const { data: budgetData } = await supabase.from('budgets').select('*');
-      if (budgetData) {
-        const loadedBudgets = budgetData.map(b => ({
-          id: b.id,
-          amount: parseFloat(b.amount),
-          contingencyAmount: b.contingency_amount ? parseFloat(b.contingency_amount) : undefined,
-          type: b.type as any,
-          categoryId: b.category_id || undefined,
-          startDate: b.start_date,
-          endDate: b.end_date,
-          name: b.name || undefined
-        }));
+      const loadedBudgets = await AppwriteService.listBudgets(userId);
+      if (loadedBudgets && loadedBudgets.length > 0) {
         setBudgets(loadedBudgets);
         LocalRepository.saveBudgets(loadedBudgets);
       }
 
       // 5. Goals
-      const { data: goalData } = await supabase.from('goals').select('*');
-      if (goalData) {
-        const loadedGoals = goalData.map(g => ({
-          id: g.id,
-          name: g.name,
-          targetAmount: parseFloat(g.target_amount),
-          currentAmount: parseFloat(g.current_amount),
-          icon: g.icon,
-          color: g.color,
-          targetDate: g.target_date
-        }));
+      const loadedGoals = await AppwriteService.listGoals(userId);
+      if (loadedGoals && loadedGoals.length > 0) {
         setGoals(loadedGoals);
         LocalRepository.saveGoals(loadedGoals);
       }
 
       // 6. Debts
-      const { data: debtData } = await supabase.from('debts').select('*');
-      if (debtData) {
-        const loadedDebts = debtData.map(d => ({
-          id: d.id,
-          personOrInstitution: d.person_or_institution,
-          amount: parseFloat(d.amount),
-          remainingAmount: parseFloat(d.remaining_amount),
-          type: d.type as any,
-          dueDate: d.due_date || undefined,
-          notes: d.notes || undefined
-        }));
+      const loadedDebts = await AppwriteService.listDebts(userId);
+      if (loadedDebts && loadedDebts.length > 0) {
         setDebts(loadedDebts);
         LocalRepository.saveDebts(loadedDebts);
       }
 
       // 7. Recurring
-      const { data: recData } = await supabase.from('recurring').select('*');
-      if (recData) {
-        const loadedRec = recData.map(r => ({
-          id: r.id,
-          amount: parseFloat(r.amount),
-          type: r.type as any,
-          categoryId: r.category_id,
-          account: r.account,
-          notes: r.notes || undefined,
-          frequency: r.frequency as any,
-          startDate: r.start_date,
-          lastAppliedDate: r.last_applied_date || undefined,
-          active: !!r.active,
-          color: r.color,
-          icon: r.icon
-        }));
+      const loadedRec = await AppwriteService.listRecurring(userId);
+      if (loadedRec && loadedRec.length > 0) {
         setRecurring(loadedRec);
         LocalRepository.saveRecurring(loadedRec);
       }
 
-      // 8. Payment Cards
+      // 8. Payment Cards (Non-destructive reconciliation)
       try {
-        const { data: cardData } = await supabase.from('cards').select('*');
-        if (cardData && cardData.length > 0) {
-          const loadedCards = cardData.map(c => ({
-            id: c.id,
-            name: c.name,
-            bank: c.bank,
-            type: c.type as any,
-            lastFourDigits: c.last_four_digits || undefined,
-            currency: c.currency || 'RD$',
-            color: c.color || '#4f46e5',
-            isActive: c.is_active !== false,
-            initialBalance: c.initial_balance !== null && c.initial_balance !== undefined ? parseFloat(c.initial_balance) : 0,
-            currentBalance: c.current_balance !== null && c.current_balance !== undefined ? parseFloat(c.current_balance) : 0,
-            minBalanceAlert: c.min_balance_alert !== null && c.min_balance_alert !== undefined ? parseFloat(c.min_balance_alert) : undefined,
-            allowOverdraft: !!c.allow_overdraft,
-            overdraftLimit: c.overdraft_limit !== null && c.overdraft_limit !== undefined ? parseFloat(c.overdraft_limit) : 0,
-            creditLimit: c.credit_limit !== null && c.credit_limit !== undefined ? parseFloat(c.credit_limit) : 0,
-            balanceUsed: c.balance_used !== null && c.balance_used !== undefined ? parseFloat(c.balance_used) : 0,
-            alertThresholdPercent: c.alert_threshold_percent || 80,
-            billingCutoffDay: c.billing_cutoff_day || 15,
-            paymentDueDay: c.payment_due_day || 5,
-            createdAt: c.created_at || new Date().toISOString()
-          }));
-          setCards(loadedCards);
-          LocalRepository.saveCards(loadedCards);
+        const loadedCards = await AppwriteService.listCards(userId);
+        if (loadedCards && loadedCards.length > 0) {
+          const localCards = LocalRepository.getCards();
+          const cloudCardIds = new Set(loadedCards.map(c => c.id));
+          const unsyncedCards = localCards.filter(c => !cloudCardIds.has(c.id));
+          const mergedCards = [...loadedCards, ...unsyncedCards];
+
+          setCards(mergedCards);
+          LocalRepository.saveCards(mergedCards);
+
+          if (unsyncedCards.length > 0) {
+            unsyncedCards.forEach(c => syncCardToCloud(c, userId));
+          }
         }
       } catch (cardErr) {
-        console.warn('Could not load cards from Supabase (table may not exist yet):', cardErr);
+        console.warn('Could not load cards from Appwrite:', cardErr);
       }
 
       // 9. Financial Notifications
       try {
-        const { data: notifData } = await supabase
-          .from('financial_notifications')
-          .select('*')
-          .order('created_at', { ascending: false });
-        if (notifData && notifData.length > 0) {
-          const loadedNotifs = notifData.map(n => ({
-            id: n.id,
-            cardId: n.card_id || undefined,
-            cardName: n.card_name || undefined,
-            type: n.type as any,
-            severity: n.severity as any,
-            title: n.title,
-            message: n.message,
-            isRead: !!n.is_read,
-            createdAt: n.created_at
-          }));
+        const loadedNotifs = await AppwriteService.listNotifications(userId);
+        if (loadedNotifs && loadedNotifs.length > 0) {
           setNotifications(loadedNotifs);
           LocalRepository.saveNotifications(loadedNotifs);
         }
       } catch (notifErr) {
-        console.warn('Could not load notifications from Supabase (table may not exist yet):', notifErr);
+        console.warn('Could not load notifications from Appwrite:', notifErr);
       }
 
     } catch (err) {
-      console.error('Error fetching data from Supabase: ', err);
+      console.error('Error fetching data from Appwrite: ', err);
     }
   };
 
   // Auth Operations
   const signUp = async (email: string, pass: string, name: string, username: string) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase no está configurado.');
+    if (!isAppwriteConfigured) throw new Error('Appwrite no está configurado.');
 
-    const { data: authData, error: authErr } = await supabase.auth.signUp({
-      email,
-      password: pass
-    });
+    const activeUser = await AppwriteService.signUp(email, pass, name, username);
 
-    if (authErr) throw authErr;
-    if (!authData.user) throw new Error('Error al crear cuenta.');
+    const initialProfile: UserProfile = {
+      name,
+      username: username.toLowerCase(),
+      email: email.toLowerCase(),
+      avatar: '',
+      currency: 'RD$',
+      language: 'es',
+      theme: 'dark',
+      accentColor: '#8b5cf6',
+      pinCode: undefined,
+      biometricsEnabled: false,
+      stealthModeEnabled: false
+    };
 
-    const { error: profileErr } = await supabase
-      .from('profiles')
-      .insert({
-        id: authData.user.id,
-        name,
-        username: username.toLowerCase(),
-        email: email.toLowerCase(),
-        currency: 'RD$',
-        theme: 'dark',
-        accent_color: '#8b5cf6',
-        pin_code: '',
-        stealth_mode_enabled: false
-      });
-
-    if (profileErr) throw profileErr;
+    await AppwriteService.syncProfile(initialProfile, activeUser.id);
 
     // Seed default categories
     const defaultCats = LocalRepository.getCategories();
     for (const cat of defaultCats) {
-      await supabase.from('categories').insert({
-        id: cat.id,
-        user_id: authData.user.id,
-        name: cat.name,
-        parent_id: cat.parentId || null,
-        color: cat.color,
-        icon: cat.icon
-      });
+      await AppwriteService.syncCategory(cat, activeUser.id);
     }
 
+    setUser(activeUser);
+    setIsCloudSynced(true);
     localStorage.setItem('finanlist_onboarded', 'true');
     setLocalIsOnboarded(true);
-    return authData.user;
+    return activeUser;
   };
 
   const signIn = async (email: string, pass: string) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase no está configurado.');
+    if (!isAppwriteConfigured) throw new Error('Appwrite no está configurado.');
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password: pass
-    });
-
-    if (error) throw error;
-    
+    const activeUser = await AppwriteService.signIn(email, pass);
+    setUser(activeUser);
+    setIsCloudSynced(true);
     localStorage.setItem('finanlist_onboarded', 'true');
     setLocalIsOnboarded(true);
-    return data.user;
+    await loadAllFromCloud(activeUser.id);
+    return activeUser;
   };
 
   const signOut = async () => {
-    if (isSupabaseConfigured) {
-      await supabase.auth.signOut();
+    if (isAppwriteConfigured) {
+      await AppwriteService.signOut();
     }
     setUser(null);
     setIsCloudSynced(false);
@@ -452,18 +348,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resetFinancialData = async () => {
-    // 1. Delete all financial records from Supabase
+    // 1. Delete all financial records from Appwrite
     if (isCloudSynced && user) {
       try {
-        await supabase.from('transactions').delete().eq('user_id', user.id);
-        await supabase.from('recurring').delete().eq('user_id', user.id);
-        await supabase.from('debts').delete().eq('user_id', user.id);
-        await supabase.from('budgets').delete().eq('user_id', user.id);
-        await supabase.from('goals').delete().eq('user_id', user.id);
-        await supabase.from('financial_notifications').delete().eq('user_id', user.id);
-        await supabase.from('cards').delete().eq('user_id', user.id);
+        await AppwriteService.resetFinancialData(user.id);
       } catch (e) {
-        console.error('Error resetting cloud data:', e);
+        console.error('Error resetting cloud data in Appwrite:', e);
         throw e;
       }
     }
@@ -488,23 +378,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteAccount = async () => {
-    // 1. Delete all data and profile from Supabase
+    // 1. Delete all data and profile from Appwrite
     if (isCloudSynced && user) {
       try {
-        await supabase.from('transactions').delete().eq('user_id', user.id);
-        await supabase.from('recurring').delete().eq('user_id', user.id);
-        await supabase.from('debts').delete().eq('user_id', user.id);
-        await supabase.from('budgets').delete().eq('user_id', user.id);
-        await supabase.from('goals').delete().eq('user_id', user.id);
-        await supabase.from('financial_notifications').delete().eq('user_id', user.id);
-        await supabase.from('cards').delete().eq('user_id', user.id);
-        await supabase.from('categories').delete().eq('user_id', user.id);
-        await supabase.from('profiles').delete().eq('id', user.id);
+        await AppwriteService.deleteAllUserData(user.id);
       } catch (e) {
-        console.error('Error deleting user data from Supabase:', e);
+        console.error('Error deleting user data from Appwrite:', e);
       }
       try {
-        await supabase.auth.signOut();
+        await AppwriteService.signOut();
       } catch (e) {
         console.error('Error signing out during deletion:', e);
       }
@@ -523,29 +405,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const changePassword = async (currentPass: string, newPass: string) => {
-    if (!isSupabaseConfigured) {
-      throw new Error('Supabase no está configurado.');
+    if (!isAppwriteConfigured) {
+      throw new Error('Appwrite no está configurado.');
     }
-    if (!user || !user.email) {
+    if (!user) {
       throw new Error('No hay una sesión activa.');
     }
-
-    // 1. Verify current password
-    const { error: verifyErr } = await supabase.auth.signInWithPassword({
-      email: user.email,
-      password: currentPass
-    });
-    if (verifyErr) {
-      throw new Error('La contraseña actual es incorrecta.');
-    }
-
-    // 2. Update to new password
-    const { error: updateErr } = await supabase.auth.updateUser({
-      password: newPass
-    });
-    if (updateErr) {
-      throw updateErr;
-    }
+    await AppwriteService.changePassword(newPass, currentPass);
   };
 
   const setStealthMode = (val: boolean) => {
@@ -554,44 +420,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     LocalRepository.saveProfile(updated);
     setProfile(updated);
     if (isCloudSynced && user) {
-      supabase.from('profiles')
-        .update({ stealth_mode_enabled: val })
-        .eq('id', user.id)
-        .then(({ error }) => { if (error) console.error(error); });
+      AppwriteService.syncProfile(updated, user.id).catch(console.error);
     }
   };
 
   // --- Card & Notification Helpers ---
-  const syncCardToCloud = async (card: PaymentCard) => {
-    if (!isCloudSynced || !user) return;
-    try {
-      await supabase.from('cards').upsert({
-        id: card.id,
-        user_id: user.id,
-        name: card.name,
-        bank: card.bank,
-        type: card.type,
-        last_four_digits: card.lastFourDigits || null,
-        currency: card.currency,
-        color: card.color,
-        is_active: card.isActive,
-        initial_balance: card.initialBalance ?? 0,
-        current_balance: card.currentBalance ?? 0,
-        min_balance_alert: card.minBalanceAlert ?? null,
-        allow_overdraft: card.allowOverdraft ?? false,
-        overdraft_limit: card.overdraftLimit ?? 0,
-        credit_limit: card.creditLimit ?? 0,
-        balance_used: card.balanceUsed ?? 0,
-        alert_threshold_percent: card.alertThresholdPercent ?? 80,
-        billing_cutoff_day: card.billingCutoffDay ?? 15,
-        payment_due_day: card.paymentDueDay ?? 5,
-        updated_at: new Date().toISOString()
-      });
-    } catch (e) {
-      console.warn('Error syncing card to Supabase:', e);
-    }
-  };
-
   const checkAndTriggerCardAlerts = (card: PaymentCard) => {
     if (!card.isActive) return;
 
@@ -728,17 +561,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notificationsToAdd.forEach(notif => {
         LocalRepository.addNotification(notif);
         if (isCloudSynced && user) {
-          supabase.from('financial_notifications').insert({
-            id: notif.id,
-            user_id: user.id,
-            card_id: notif.cardId || null,
-            card_name: notif.cardName || null,
-            type: notif.type,
-            severity: notif.severity,
-            title: notif.title,
-            message: notif.message,
-            is_read: false
-          }).then(({ error }) => { if (error) console.error(error); });
+          AppwriteService.syncNotification(notif, user.id).catch(console.error);
         }
 
         // Native Web Notification API
@@ -814,38 +637,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // --- Transaction Ops ---
-  const addTransaction = async (txData: Omit<Transaction, 'id'>) => {
+  const addTransaction = async (txData: Omit<Transaction, 'id'>): Promise<void> => {
     const id = 'tx_' + Date.now() + Math.random().toString(36).substr(2, 4);
     const newTx: Transaction = { ...txData, id };
     
+    // 1. Immediately persist locally (Local-First Guarantee)
     LocalRepository.addTransaction(newTx);
     applyTransactionToCard(newTx, false);
 
-    if (isCloudSynced && user) {
-      try {
-        await supabase.from('transactions').insert({
-          id,
-          user_id: user.id,
-          amount: newTx.amount,
-          type: newTx.type,
-          category_id: newTx.categoryId,
-          subcategory_id: newTx.subcategoryId || null,
-          account: newTx.account,
-          card_id: newTx.cardId || null,
-          destination_card_id: newTx.destinationCardId || null,
-          date: newTx.date,
-          time: newTx.time,
-          notes: newTx.notes || null,
-          tags: newTx.tags || [],
-          color: newTx.color,
-          icon: newTx.icon,
-          favorite: newTx.favorite || false
-        });
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
+    // 2. Goal tracking update
     if (txData.type === 'expense' && txData.notes) {
       const match = txData.notes.match(/#goal:([a-zA-Z0-9_]+)/);
       if (match) {
@@ -858,16 +658,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
           LocalRepository.updateGoal(updatedGoal);
           if (isCloudSynced && user) {
-            await supabase.from('goals').update({ current_amount: updatedGoal.currentAmount }).eq('id', goalId);
+            AppwriteService.syncGoal(updatedGoal, user.id).catch(console.warn);
           }
         }
       }
     }
 
+    // 3. Update React state immediately
     reloadAll();
+
+    // 4. Sync to Appwrite
+    if (isCloudSynced && user) {
+      try {
+        await syncTransactionToCloud(newTx, user.id);
+      } catch (e) {
+        console.warn('Error syncing new transaction to cloud:', e);
+      }
+    }
   };
 
-  const updateTransaction = async (tx: Transaction) => {
+  const updateTransaction = async (tx: Transaction): Promise<void> => {
     const oldTx = transactions.find(t => t.id === tx.id);
     LocalRepository.updateTransaction(tx);
 
@@ -875,29 +685,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       applyTransactionToCard(oldTx, true);
     }
     applyTransactionToCard(tx, false);
-
-    if (isCloudSynced && user) {
-      try {
-        await supabase.from('transactions').update({
-          amount: tx.amount,
-          type: tx.type,
-          category_id: tx.categoryId,
-          subcategory_id: tx.subcategoryId || null,
-          account: tx.account,
-          card_id: tx.cardId || null,
-          destination_card_id: tx.destinationCardId || null,
-          date: tx.date,
-          time: tx.time,
-          notes: tx.notes || null,
-          tags: tx.tags || [],
-          color: tx.color,
-          icon: tx.icon,
-          favorite: tx.favorite || false
-        }).eq('id', tx.id);
-      } catch (e) {
-        console.error(e);
-      }
-    }
 
     if (oldTx) {
       if (oldTx.type === 'expense' && oldTx.notes) {
@@ -912,7 +699,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             };
             LocalRepository.updateGoal(updatedGoal);
             if (isCloudSynced && user) {
-              await supabase.from('goals').update({ current_amount: updatedGoal.currentAmount }).eq('id', goalId);
+              await AppwriteService.syncGoal(updatedGoal, user.id);
             }
           }
         }
@@ -929,7 +716,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             };
             LocalRepository.updateGoal(updatedGoal);
             if (isCloudSynced && user) {
-              await supabase.from('goals').update({ current_amount: updatedGoal.currentAmount }).eq('id', goalId);
+              await AppwriteService.syncGoal(updatedGoal, user.id);
             }
           }
         }
@@ -937,22 +724,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     reloadAll();
+
+    if (isCloudSynced && user) {
+      try {
+        await syncTransactionToCloud(tx, user.id);
+      } catch (e) {
+        console.warn('Error updating transaction in cloud:', e);
+      }
+    }
   };
 
-  const deleteTransaction = async (id: string) => {
+  const deleteTransaction = async (id: string): Promise<void> => {
     const tx = transactions.find(t => t.id === id);
     if (tx) {
       applyTransactionToCard(tx, true);
     }
     LocalRepository.deleteTransaction(id);
-
-    if (isCloudSynced && user) {
-      try {
-        await supabase.from('transactions').delete().eq('id', id);
-      } catch (e) {
-        console.error(e);
-      }
-    }
 
     if (tx && tx.type === 'expense' && tx.notes) {
       const match = tx.notes.match(/#goal:([a-zA-Z0-9_]+)/);
@@ -966,13 +753,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
           LocalRepository.updateGoal(updatedGoal);
           if (isCloudSynced && user) {
-            await supabase.from('goals').update({ current_amount: updatedGoal.currentAmount }).eq('id', goalId);
+            await AppwriteService.syncGoal(updatedGoal, user.id);
           }
         }
       }
     }
 
     reloadAll();
+
+    if (isCloudSynced && user) {
+      try {
+        await AppwriteService.deleteTransaction(id);
+      } catch (e) {
+        console.warn('Error deleting transaction in cloud:', e);
+      }
+    }
   };
 
   // --- Card Ops ---
@@ -1001,7 +796,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     LocalRepository.deleteCard(id);
     if (isCloudSynced && user) {
       try {
-        await supabase.from('cards').delete().eq('id', id);
+        await AppwriteService.deleteCard(id);
       } catch (e) {
         console.error(e);
       }
@@ -1050,7 +845,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const markNotificationRead = (id: string) => {
     LocalRepository.markNotificationAsRead(id);
     if (isCloudSynced && user) {
-      supabase.from('financial_notifications').update({ is_read: true }).eq('id', id).then();
+      AppwriteService.updateNotification(id, { isRead: true }).catch(console.warn);
     }
     setNotifications(LocalRepository.getNotifications());
   };
@@ -1058,7 +853,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const markAllNotificationsRead = () => {
     LocalRepository.markAllNotificationsAsRead();
     if (isCloudSynced && user) {
-      supabase.from('financial_notifications').update({ is_read: true }).eq('user_id', user.id).then();
+      AppwriteService.markAllNotificationsRead(user.id).catch(console.warn);
     }
     setNotifications(LocalRepository.getNotifications());
   };
@@ -1066,7 +861,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteNotification = (id: string) => {
     LocalRepository.deleteNotification(id);
     if (isCloudSynced && user) {
-      supabase.from('financial_notifications').delete().eq('id', id).then();
+      AppwriteService.deleteNotification(id).catch(console.warn);
     }
     setNotifications(LocalRepository.getNotifications());
   };
@@ -1074,7 +869,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const clearAllNotifications = () => {
     LocalRepository.clearNotifications();
     if (isCloudSynced && user) {
-      supabase.from('financial_notifications').delete().eq('user_id', user.id).then();
+      AppwriteService.clearAllNotifications(user.id).catch(console.warn);
     }
     setNotifications([]);
   };
@@ -1099,14 +894,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     LocalRepository.addCategory(newCat);
 
     if (isCloudSynced && user) {
-      supabase.from('categories').insert({
-        id,
-        user_id: user.id,
-        name: newCat.name,
-        parent_id: newCat.parentId || null,
-        color: newCat.color,
-        icon: newCat.icon
-      }).then(({ error }) => { if (error) console.error(error); });
+      AppwriteService.syncCategory(newCat, user.id).catch(console.error);
     }
 
     setCategories(LocalRepository.getCategories());
@@ -1118,11 +906,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('categories').update({
-          name: cat.name,
-          color: cat.color,
-          icon: cat.icon
-        }).eq('id', cat.id);
+        await AppwriteService.syncCategory(cat, user.id);
       } catch (err) {
         console.error(err);
       }
@@ -1136,7 +920,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('categories').delete().eq('id', id);
+        await AppwriteService.deleteCategory(id);
       } catch (err) {
         console.error(err);
       }
@@ -1153,17 +937,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('budgets').insert({
-          id,
-          user_id: user.id,
-          amount: newB.amount,
-          contingency_amount: newB.contingencyAmount || 0,
-          type: newB.type,
-          category_id: newB.categoryId || null,
-          start_date: newB.startDate,
-          end_date: newB.endDate,
-          name: newB.name || null
-        });
+        await AppwriteService.syncBudget(newB, user.id);
       } catch (err) {
         console.error(err);
       }
@@ -1177,15 +951,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('budgets').update({
-          amount: b.amount,
-          contingency_amount: b.contingencyAmount || 0,
-          type: b.type,
-          category_id: b.categoryId || null,
-          start_date: b.startDate,
-          end_date: b.endDate,
-          name: b.name || null
-        }).eq('id', b.id);
+        await AppwriteService.syncBudget(b, user.id);
       } catch (err) {
         console.error(err);
       }
@@ -1199,7 +965,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('budgets').delete().eq('id', id);
+        await AppwriteService.deleteBudget(id);
       } catch (err) {
         console.error(err);
       }
@@ -1216,16 +982,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('goals').insert({
-          id,
-          user_id: user.id,
-          name: newG.name,
-          target_amount: newG.targetAmount,
-          current_amount: newG.currentAmount,
-          icon: newG.icon,
-          color: newG.color,
-          target_date: newG.targetDate
-        });
+        await AppwriteService.syncGoal(newG, user.id);
       } catch (err) {
         console.error(err);
       }
@@ -1239,14 +996,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('goals').update({
-          name: g.name,
-          target_amount: g.targetAmount,
-          current_amount: g.currentAmount,
-          icon: g.icon,
-          color: g.color,
-          target_date: g.targetDate
-        }).eq('id', g.id);
+        await AppwriteService.syncGoal(g, user.id);
       } catch (err) {
         console.error(err);
       }
@@ -1260,7 +1010,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('goals').delete().eq('id', id);
+        await AppwriteService.deleteGoal(id);
       } catch (err) {
         console.error(err);
       }
@@ -1277,21 +1027,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('recurring').insert({
-          id,
-          user_id: user.id,
-          amount: newRec.amount,
-          type: newRec.type,
-          category_id: newRec.categoryId,
-          account: newRec.account,
-          notes: newRec.notes || null,
-          frequency: newRec.frequency,
-          start_date: newRec.startDate,
-          last_applied_date: newRec.lastAppliedDate || null,
-          active: newRec.active,
-          color: newRec.color,
-          icon: newRec.icon
-        });
+        await AppwriteService.syncRecurring(newRec, user.id);
       } catch (err) {
         console.error(err);
       }
@@ -1305,19 +1041,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('recurring').update({
-          amount: rec.amount,
-          type: rec.type,
-          category_id: rec.categoryId,
-          account: rec.account,
-          notes: rec.notes || null,
-          frequency: rec.frequency,
-          start_date: rec.startDate,
-          last_applied_date: rec.lastAppliedDate || null,
-          active: rec.active,
-          color: rec.color,
-          icon: rec.icon
-        }).eq('id', rec.id);
+        await AppwriteService.syncRecurring(rec, user.id);
       } catch (err) {
         console.error(err);
       }
@@ -1331,7 +1055,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('recurring').delete().eq('id', id);
+        await AppwriteService.deleteRecurring(id);
       } catch (err) {
         console.error(err);
       }
@@ -1348,16 +1072,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('debts').insert({
-          id,
-          user_id: user.id,
-          person_or_institution: newDebt.personOrInstitution,
-          amount: newDebt.amount,
-          remaining_amount: newDebt.remainingAmount,
-          type: newDebt.type,
-          due_date: newDebt.dueDate || null,
-          notes: newDebt.notes || null
-        });
+        await AppwriteService.syncDebt(newDebt, user.id);
       } catch (err) {
         console.error(err);
       }
@@ -1371,14 +1086,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('debts').update({
-          person_or_institution: debt.personOrInstitution,
-          amount: debt.amount,
-          remaining_amount: debt.remainingAmount,
-          type: debt.type,
-          due_date: debt.dueDate || null,
-          notes: debt.notes || null
-        }).eq('id', debt.id);
+        await AppwriteService.syncDebt(debt, user.id);
       } catch (err) {
         console.error(err);
       }
@@ -1392,7 +1100,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('debts').delete().eq('id', id);
+        await AppwriteService.deleteDebt(id);
       } catch (err) {
         console.error(err);
       }
@@ -1408,16 +1116,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isCloudSynced && user) {
       try {
-        await supabase.from('profiles').update({
-          name: profData.name,
-          username: profData.username || '',
-          email: profData.email || '',
-          currency: profData.currency,
-          theme: profData.theme,
-          accent_color: profData.accentColor,
-          pin_code: profData.pinCode || null,
-          stealth_mode_enabled: profData.stealthModeEnabled || false
-        }).eq('id', user.id);
+        await AppwriteService.syncProfile(profData, user.id);
       } catch (err) {
         console.error(err);
       }
@@ -1428,89 +1127,98 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (!localIsOnboarded && !user) return;
 
-    const activeRecs = LocalRepository.getRecurring().filter(r => r.active);
-    if (activeRecs.length === 0) return;
+    let isMounted = true;
 
-    const now = new Date();
-    let didApplyAny = false;
+    const processRecurring = async () => {
+      const activeRecs = LocalRepository.getRecurring().filter(r => r.active);
+      if (activeRecs.length === 0) return;
 
-    activeRecs.forEach(async (rec) => {
-      const startDate = new Date(rec.startDate);
-      const lastApplied = rec.lastAppliedDate 
-        ? new Date(rec.lastAppliedDate) 
-        : new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
+      const now = new Date();
+      let didApplyAny = false;
 
-      let nextCheck = new Date(lastApplied.getTime() + 24 * 60 * 60 * 1000);
-      while (nextCheck <= now) {
-        const checkDateStr = nextCheck.toISOString().split('T')[0];
-        let isMatch = false;
-        const diffTime = nextCheck.getTime() - startDate.getTime();
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      for (const rec of activeRecs) {
+        if (!isMounted) break;
 
-        if (diffDays >= 0) {
-          if (rec.frequency === 'daily') {
-            isMatch = true;
-          } else if (rec.frequency === 'weekly') {
-            isMatch = diffDays % 7 === 0;
-          } else if (rec.frequency === 'monthly') {
-            isMatch = nextCheck.getDate() === startDate.getDate() || 
-                      (nextCheck.getDate() === new Date(nextCheck.getFullYear(), nextCheck.getMonth() + 1, 0).getDate() && startDate.getDate() > nextCheck.getDate());
-          } else if (rec.frequency === 'yearly') {
-            isMatch = nextCheck.getMonth() === startDate.getMonth() && nextCheck.getDate() === startDate.getDate();
+        const startDate = createLocalDate(rec.startDate);
+        const lastApplied = rec.lastAppliedDate 
+          ? createLocalDate(rec.lastAppliedDate) 
+          : new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
+
+        let nextCheck = new Date(lastApplied.getTime() + 24 * 60 * 60 * 1000);
+        let recUpdated = false;
+
+        while (nextCheck <= now) {
+          const checkDateStr = formatLocalDateISO(nextCheck);
+          let isMatch = false;
+          const diffTime = nextCheck.getTime() - startDate.getTime();
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+          if (diffDays >= 0) {
+            if (rec.frequency === 'daily') {
+              isMatch = true;
+            } else if (rec.frequency === 'weekly') {
+              isMatch = diffDays % 7 === 0;
+            } else if (rec.frequency === 'monthly') {
+              isMatch = nextCheck.getDate() === startDate.getDate() || 
+                        (nextCheck.getDate() === new Date(nextCheck.getFullYear(), nextCheck.getMonth() + 1, 0).getDate() && startDate.getDate() > nextCheck.getDate());
+            } else if (rec.frequency === 'yearly') {
+              isMatch = nextCheck.getMonth() === startDate.getMonth() && nextCheck.getDate() === startDate.getDate();
+            }
           }
-        }
 
-        if (isMatch) {
-          const txId = 'tx_' + Date.now() + Math.random().toString(36).substr(2, 4);
-          const newTx: Transaction = {
-            id: txId,
-            amount: rec.amount,
-            type: rec.type,
-            categoryId: rec.categoryId,
-            account: rec.account,
-            date: checkDateStr,
-            time: '08:00',
-            notes: rec.notes ? `${rec.notes} (Recurrente)` : 'Transacción recurrente',
-            color: rec.color,
-            icon: rec.icon
-          };
-          LocalRepository.addTransaction(newTx);
-          rec.lastAppliedDate = checkDateStr;
-          didApplyAny = true;
-
-          if (isCloudSynced && user) {
-            await supabase.from('transactions').insert({
+          if (isMatch) {
+            const txId = 'tx_' + Date.now() + Math.random().toString(36).substr(2, 4);
+            const newTx: Transaction = {
               id: txId,
-              user_id: user.id,
-              amount: newTx.amount,
-              type: newTx.type,
-              category_id: newTx.categoryId,
-              account: newTx.account,
-              date: newTx.date,
-              time: newTx.time,
-              notes: newTx.notes,
-              color: newTx.color,
-              icon: newTx.icon
-            });
+              amount: rec.amount,
+              type: rec.type,
+              categoryId: rec.categoryId,
+              account: rec.account,
+              date: checkDateStr,
+              time: '08:00',
+              notes: rec.notes ? `${rec.notes} (Recurrente)` : 'Transacción recurrente',
+              color: rec.color,
+              icon: rec.icon
+            };
+            LocalRepository.addTransaction(newTx);
+            rec.lastAppliedDate = checkDateStr;
+            recUpdated = true;
+            didApplyAny = true;
+
+            if (isCloudSynced && user) {
+              try {
+                await AppwriteService.syncTransaction(newTx, user.id);
+              } catch (e) {
+                console.error('[Recurring] Error syncing recurring transaction to Appwrite:', e);
+              }
+            }
+          }
+
+          nextCheck.setDate(nextCheck.getDate() + 1);
+        }
+
+        if (recUpdated) {
+          LocalRepository.updateRecurring(rec);
+          if (isCloudSynced && user) {
+            try {
+              await AppwriteService.syncRecurring(rec, user.id);
+            } catch (e) {
+              console.error('[Recurring] Error updating recurring schedule in Appwrite:', e);
+            }
           }
         }
-
-        nextCheck.setDate(nextCheck.getDate() + 1);
       }
 
-      if (didApplyAny) {
-        LocalRepository.updateRecurring(rec);
-        if (isCloudSynced && user) {
-          await supabase.from('recurring').update({
-            last_applied_date: rec.lastAppliedDate
-          }).eq('id', rec.id);
-        }
+      if (didApplyAny && isMounted) {
+        reloadAll();
       }
-    });
+    };
 
-    if (didApplyAny) {
-      reloadAll();
-    }
+    processRecurring();
+
+    return () => {
+      isMounted = false;
+    };
   }, [localIsOnboarded, user]);
 
   // --- Import / Export ---
