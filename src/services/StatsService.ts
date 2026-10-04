@@ -23,6 +23,7 @@ export class StatsService {
   ): {
     totalBalance: number;
     availableCash: number;
+    currentBalance: number;
     monthlyIncome: number;
     monthlyExpense: number;
     monthlySavings: number;
@@ -40,8 +41,9 @@ export class StatsService {
     const summary = FinancialEngine.calculateSummary(transactions, cards, budgets, dateFilter, debts);
 
     return {
-      totalBalance: summary.consolidatedNetBalance,
+      totalBalance: summary.availableLiquidCash,
       availableCash: summary.availableLiquidCash,
+      currentBalance: summary.availableLiquidCash,
       monthlyIncome: summary.monthlyIncome,
       monthlyExpense: summary.monthlyExpense,
       monthlySavings: summary.monthlySavings,

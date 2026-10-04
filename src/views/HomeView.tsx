@@ -495,14 +495,23 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
       {/* Hero Balance Card */}
       <div className="card" style={styles.balanceHero}>
         <div style={styles.balanceHeader}>
-          <span>Saldo Total Consolidado</span>
-          <span style={{ fontSize: '11px', fontWeight: '500', color: 'var(--text-muted)' }}>
-            Patrimonio Total
-          </span>
+          <span>Saldo Actual</span>
+          {summary.consolidatedNetBalance !== summary.availableCash ? (
+            <span 
+              style={{ fontSize: '11px', fontWeight: '500', color: 'var(--text-muted)' }} 
+              title="Patrimonio neto total: Activos menos Deudas"
+            >
+              Patrimonio: {formatVal(summary.consolidatedNetBalance)}
+            </span>
+          ) : (
+            <span style={{ fontSize: '11px', fontWeight: '500', color: 'var(--text-muted)' }}>
+              Dinero Disponible
+            </span>
+          )}
         </div>
-        <div style={styles.balanceValue}>{renderHierarchicalBalance(summary.consolidatedNetBalance)}</div>
+        <div style={styles.balanceValue}>{renderHierarchicalBalance(summary.availableCash)}</div>
 
-        {/* Desglose consolidado: Efectivo, Banco, Deuda de Tarjetas, Cuentas por Cobrar y Préstamos */}
+        {/* Desglose de dinero disponible y estado de deudas independientes */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '-4px', marginBottom: '6px' }}>
           <span style={styles.availableBadge} title="Dinero en efectivo físico disponible">
             💵 Efectivo: {formatAccountVal(summary.cashBalance)}
@@ -517,9 +526,11 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
                 backgroundColor: 'rgba(139, 92, 246, 0.1)',
                 color: '#8b5cf6',
                 border: '1px solid rgba(139, 92, 246, 0.25)',
-                fontWeight: '600'
+                fontWeight: '600',
+                cursor: 'pointer'
               }}
-              title="Portafolio de Inversiones (activo)"
+              onClick={() => setActiveTab('budget')}
+              title="Portafolio de Inversiones (activo independiente)"
             >
               📈 Inversiones: {formatAccountVal(summary.investmentsBalance)}
             </span>
@@ -531,39 +542,45 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
                 backgroundColor: 'rgba(16, 185, 129, 0.1)',
                 color: 'var(--color-success)',
                 border: '1px solid rgba(16, 185, 129, 0.25)',
-                fontWeight: '600'
+                fontWeight: '600',
+                cursor: 'pointer'
               }}
-              title="Préstamos otorgados a otros pendientes de cobro (activo)"
+              onClick={() => setActiveTab('budget')}
+              title="Préstamos otorgados pendientes de cobro (activo independiente)"
             >
-              🤝 Por cobrar: +{formatAccountVal(summary.totalReceivables)}
+              🤝 Por cobrar: {formatAccountVal(summary.totalReceivables)}
             </span>
           )}
           {summary.totalCreditCardDebt > 0 && (
             <span 
               style={{
                 ...styles.availableBadge,
-                backgroundColor: 'var(--color-danger-light)',
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
                 color: 'var(--color-danger)',
                 border: '1px solid rgba(239, 68, 68, 0.25)',
-                fontWeight: '700'
+                fontWeight: '600',
+                cursor: 'pointer'
               }}
-              title="Deuda acumulada en tarjetas de crédito (pasivo)"
+              onClick={() => setActiveTab('cards')}
+              title="Deuda acumulada en tarjetas de crédito (pasivo independiente por pagar a plazos)"
             >
-              💳 Deuda Tarjetas: -{formatAccountVal(summary.totalCreditCardDebt)}
+              💳 Deuda Tarjetas: {formatAccountVal(summary.totalCreditCardDebt)}
             </span>
           )}
           {summary.totalOwedDebts > 0 && (
             <span 
               style={{
                 ...styles.availableBadge,
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
                 color: 'var(--color-danger)',
                 border: '1px solid rgba(239, 68, 68, 0.25)',
-                fontWeight: '600'
+                fontWeight: '600',
+                cursor: 'pointer'
               }}
-              title="Préstamos adquiridos pendientes de pago (pasivo)"
+              onClick={() => setActiveTab('budget')}
+              title="Deudas por pagar a plazos (pasivo independiente - haz clic para abonar o gestionar)"
             >
-              ⏳ Por pagar: -{formatAccountVal(summary.totalOwedDebts)}
+              ⏳ Deuda por pagar: {formatAccountVal(summary.totalOwedDebts)}
             </span>
           )}
           <span 

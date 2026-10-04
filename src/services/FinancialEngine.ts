@@ -6,8 +6,10 @@ export interface FinancialEngineSummary {
   // Saldo Total Consolidado (Patrimonio Neto Total): Activos (Líquidos + Inversiones + Por Cobrar) - Pasivos (Tarjetas + Deudas)
   consolidatedNetBalance: number;
 
-  // Dinero Disponible Líquido (Efectivo + Cuentas Bancarias / Débito)
+  // Dinero Disponible Líquido / Saldo Actual (Efectivo + Cuentas Bancarias / Débito)
+  // Las deudas por pagar no restan de este saldo por adelantado; solo se restan cuando se abona o paga.
   availableLiquidCash: number;
+  currentBalance: number;
 
   // Deuda Total de Tarjetas de Crédito (Pasivo acumulado por compras en crédito)
   totalCreditCardDebt: number;
@@ -200,6 +202,7 @@ export class FinancialEngine {
     return {
       consolidatedNetBalance,
       availableLiquidCash,
+      currentBalance: availableLiquidCash,
       totalCreditCardDebt,
       totalCreditAvailable,
       totalCreditLimit,

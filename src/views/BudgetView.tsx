@@ -737,7 +737,7 @@ export const BudgetView: React.FC = () => {
       addTransaction({
         amount,
         type: debt.type === 'borrowed' ? 'expense' : 'income',
-        categoryId: debt.type === 'borrowed' ? 'cat_saving' : 'cat_extra',
+        categoryId: debt.type === 'borrowed' ? 'cat_bills' : 'cat_extra',
         account,
         date: now.toISOString().split('T')[0],
         time: now.toTimeString().split(' ')[0].slice(0, 5),
