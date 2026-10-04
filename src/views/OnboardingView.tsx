@@ -47,8 +47,8 @@ export const OnboardingView: React.FC = () => {
   };
 
   const handleFinishRegistration = async () => {
-    if (!password || password.length < 6) {
-      setErrorMsg('La contraseña de la nube debe tener al menos 6 caracteres.');
+    if (!password || password.length < 8) {
+      setErrorMsg('La contraseña de la nube debe tener al menos 8 caracteres.');
       return;
     }
 
@@ -91,7 +91,11 @@ export const OnboardingView: React.FC = () => {
       window.location.reload();
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || 'Error al crear la cuenta. Verifica que los datos sean correctos.');
+      let msg = err.message || 'Error al crear la cuenta. Verifica que los datos sean correctos.';
+      if (msg.includes('between 8 and 256') || (msg.toLowerCase().includes('password') && msg.includes('param'))) {
+        msg = 'La contraseña debe tener al menos 8 caracteres.';
+      }
+      setErrorMsg(msg);
     } finally {
       setIsLoading(false);
     }
@@ -337,7 +341,7 @@ export const OnboardingView: React.FC = () => {
                 </div>
 
                 <div className="input-group">
-                  <label className="input-label">Contraseña (Mín. 6 caracteres)</label>
+                  <label className="input-label">Contraseña (Mín. 8 caracteres)</label>
                   <input
                     type="password"
                     placeholder="Contraseña para iniciar sesión"

@@ -322,8 +322,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
       setPassError('Por favor ingresa tu contraseña actual.');
       return;
     }
-    if (!newPassword || newPassword.length < 6) {
-      setPassError('La nueva contraseña debe tener al menos 6 caracteres.');
+    if (!newPassword || newPassword.length < 8) {
+      setPassError('La nueva contraseña debe tener al menos 8 caracteres.');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -1188,11 +1188,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
               </div>
 
               <div className="input-group">
-                <label className="input-label">Nueva Contraseña (mínimo 6 caracteres)</label>
+                <label className="input-label">Nueva Contraseña (mínimo 8 caracteres)</label>
                 <div style={{ position: 'relative' }}>
                   <input
                     type={showNewPass ? 'text' : 'password'}
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Mínimo 8 caracteres"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     className="input-field"
