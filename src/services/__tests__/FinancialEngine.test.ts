@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { FinancialEngine } from '../FinancialEngine';
-import { Transaction, PaymentCard } from '../../models/types';
+import { Transaction, PaymentCard, Debt } from '../../models/types';
 import { getTodayDateString } from '../../utils/dateUtils';
 
 describe('FinancialEngine', () => {
@@ -225,5 +225,92 @@ describe('FinancialEngine', () => {
     expect(summary.consolidatedNetBalance).toBe(6500);
     expect(summary.monthlyIncome).toBe(8000);
     expect(summary.monthlyExpense).toBe(1500);
+  });
+
+  it('incorporates investments, receivables and payables debts into consolidated net worth', () => {
+    // Liquid: Cash RD$ 10,000, Debit RD$ 20,000 -> RD$ 30,000
+    // Investments: RD$ 50,000
+    // Receivables (lent to friend): RD$ 5,000
+    // Credit card debt: RD$ 10,000
+    // Payable debt (loan from bank): RD$ 15,000
+    // Total Assets = 30,000 (Liquid) + 50,000 (Investments) + 5,000 (Receivables) = 85,000
+    // Total Liabilities = 10,000 (CC) + 15,000 (Loan) = 25,000
+    // Expected Net Worth = 85,000 - 25,000 = 60,000
+
+    const txs: Transaction[] = [
+      {
+        id: 'tx_cash_1',
+        amount: 10000,
+        type: 'income',
+        categoryId: 'cat_sal',
+        account: 'Efectivo',
+        date: today,
+        time: '09:00',
+        color: '#2ecc71',
+        icon: 'Cash'
+      },
+      {
+        id: 'tx_inv_1',
+        amount: 50000,
+        type: 'income',
+        categoryId: 'cat_inv',
+        account: 'Inversiones',
+        date: today,
+        time: '10:00',
+        color: '#8b5cf6',
+        icon: 'TrendingUp'
+      }
+    ];
+
+    const debts: Debt[] = [
+      {
+        id: 'debt_lent_1',
+        personOrInstitution: 'Carlos (Amigo)',
+        amount: 5000,
+        remainingAmount: 5000,
+        type: 'lent'
+      },
+      {
+        id: 'debt_borrowed_1',
+        personOrInstitution: 'Préstamo Banco',
+        amount: 15000,
+        remainingAmount: 15000,
+        type: 'borrowed'
+      }
+    ];
+
+    const summary = FinancialEngine.calculateSummary(txs, [creditCard, debitCard], [], undefined, debts);
+
+    expect(summary.availableLiquidCash).toBe(30000);
+    expect(summary.investmentsBalance).toBe(50000);
+    expect(summary.totalReceivables).toBe(5000);
+    expect(summary.totalCreditCardDebt).toBe(10000);
+    expect(summary.totalOwedDebts).toBe(15000);
+    expect(summary.consolidatedNetBalance).toBe(60000);
+  });
+
+  it('accurately calculates days until billing cutoff and payment due date', () => {
+    // Reference date: May 10, 2026
+    const testDate = new Date(2026, 4, 10); // month is 0-indexed: 4 is May
+
+    // Cutoff on 15th: 15 - 10 = 5 days
+    const cutoffFuture = FinancialEngine.getDaysUntilCutoff(15, testDate);
+    expect(cutoffFuture.days).toBe(5);
+    expect(cutoffFuture.isToday).toBe(false);
+
+    // Cutoff on 10th: same day
+    const cutoffToday = FinancialEngine.getDaysUntilCutoff(10, testDate);
+    expect(cutoffToday.days).toBe(0);
+    expect(cutoffToday.isToday).toBe(true);
+
+    // Cutoff on 5th: already passed in May, next cutoff is June 5th (26 days)
+    const cutoffPast = FinancialEngine.getDaysUntilCutoff(5, testDate);
+    expect(cutoffPast.days).toBe(26);
+    expect(cutoffPast.isToday).toBe(false);
+
+    // Payment due on 25th: 25 - 10 = 15 days
+    const dueFuture = FinancialEngine.getDaysUntilPaymentDue(25, testDate);
+    expect(dueFuture.days).toBe(15);
+    expect(dueFuture.isToday).toBe(false);
   });
 });

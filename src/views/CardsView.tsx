@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { PaymentCard, CardType } from '../models/types';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { Modal } from '../components/Modal';
+import { FinancialEngine } from '../services/FinancialEngine';
 
 interface CardsViewProps {
   onBack: () => void;
@@ -456,6 +457,8 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
               const usedPercent = creditLimit > 0 ? (balanceUsed / creditLimit) * 100 : 0;
               const isCreditOverLimit = balanceUsed > creditLimit;
               const isCreditNearThreshold = usedPercent >= (card.alertThresholdPercent || 80);
+              const cutoffInfo = isCredit ? FinancialEngine.getDaysUntilCutoff(card.billingCutoffDay || 15) : null;
+              const paymentDueInfo = isCredit ? FinancialEngine.getDaysUntilPaymentDue(card.paymentDueDay || 5) : null;
 
               // Debit specific math
               const debitBalance = card.currentBalance ?? 0;
@@ -674,11 +677,36 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
                     justifyContent: 'space-between',
                     gap: '8px'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>
-                      {isCredit && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {isCredit && cutoffInfo && paymentDueInfo && (
                         <>
-                          <span>Corte: <b>día {card.billingCutoffDay || 15}</b></span>
-                          <span>Pago: <b>día {card.paymentDueDay || 5}</b></span>
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            backgroundColor: cutoffInfo.isToday ? 'rgba(239, 68, 68, 0.15)' : cutoffInfo.days <= 3 ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-input)',
+                            color: cutoffInfo.isToday ? 'var(--color-danger)' : cutoffInfo.days <= 3 ? 'var(--color-warning)' : 'var(--text-primary)',
+                            fontWeight: '600'
+                          }}>
+                            <span>✂️ {cutoffInfo.isToday ? 'Corta HOY' : `Corta en ${cutoffInfo.days}d`}</span>
+                            <span style={{ fontSize: '10px', opacity: 0.7 }}>(día {card.billingCutoffDay || 15})</span>
+                          </div>
+
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            backgroundColor: paymentDueInfo.isToday ? 'rgba(239, 68, 68, 0.2)' : paymentDueInfo.days <= 5 ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-input)',
+                            color: paymentDueInfo.isToday || paymentDueInfo.days <= 5 ? 'var(--color-danger)' : 'var(--text-primary)',
+                            fontWeight: '600'
+                          }}>
+                            <span>💳 {paymentDueInfo.isToday ? 'Vence HOY' : `Vence en ${paymentDueInfo.days}d`}</span>
+                            <span style={{ fontSize: '10px', opacity: 0.7 }}>(día {card.paymentDueDay || 5})</span>
+                          </div>
                         </>
                       )}
                       {isDebit && (
@@ -740,6 +768,44 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
                       </button>
                     </div>
                   </div>
+
+                  {/* Strategic Credit Intelligence / Advice */}
+                  {isCredit && card.isActive && cutoffInfo && paymentDueInfo && (
+                    <>
+                      {cutoffInfo.days > 20 && (
+                        <div style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                          border: '1px solid rgba(16, 185, 129, 0.2)',
+                          fontSize: '11px',
+                          color: 'var(--color-success)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}>
+                          <DynamicIcon name="Sparkles" size={13} color="var(--color-success)" />
+                          <span><b>Financiamiento óptimo:</b> Compras de hoy tendrán hasta ~45 días sin intereses.</span>
+                        </div>
+                      )}
+                      {paymentDueInfo.days <= 5 && balanceUsed > 0 && (
+                        <div style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                          border: '1px solid rgba(239, 68, 68, 0.2)',
+                          fontSize: '11px',
+                          color: 'var(--color-danger)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}>
+                          <DynamicIcon name="AlertCircle" size={13} color="var(--color-danger)" />
+                          <span><b>Pago próximo:</b> Vence el día {card.paymentDueDay || 5}. Paga a tiempo para evitar recargos e intereses.</span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               );
             })}

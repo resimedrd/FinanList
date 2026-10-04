@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { DynamicIcon } from './DynamicIcon';
-import { Transaction } from '../models/types';
+import { Transaction, Category } from '../models/types';
 import { LocalRepository } from '../repositories/LocalRepository';
 import { compressImageFile } from '../utils/imageUtils';
 
@@ -37,7 +37,7 @@ interface TransactionModalProps {
 }
 
 export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onClose, editTransaction, defaultType }) => {
-  const { categories, addTransaction, updateTransaction, profile, addCategory, cards, setActiveTab } = useApp();
+  const { categories, transactions, addTransaction, updateTransaction, profile, addCategory, cards, setActiveTab } = useApp();
 
   const [amount, setAmount] = useState<string>('');
   const [type, setType] = useState<'income' | 'expense' | 'payment'>('expense');
@@ -79,6 +79,24 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
     setShowInlineAddCategory(false);
   };
 
+  // Top 5 frequent categories for current type
+  const frequentCategories = useMemo(() => {
+    const counts: Record<string, number> = {};
+    (transactions || [])
+      .filter(t => t.type === type)
+      .slice(0, 50)
+      .forEach(t => {
+        if (t.categoryId) {
+          counts[t.categoryId] = (counts[t.categoryId] || 0) + 1;
+        }
+      });
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([catId]) => categories.find(c => c.id === catId))
+      .filter((c): c is Category => !!c && !c.parentId);
+  }, [transactions, type, categories]);
+
   // Default values or load edit details
   useEffect(() => {
     if (isOpen) {
@@ -111,7 +129,17 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
         setSelectedSubCatId('');
 
         const activeCards = cards.filter(c => c.isActive);
-        if (activeCards.length > 0) {
+        const lastCardId = localStorage.getItem('finanlist_last_card_id');
+        const lastAccount = localStorage.getItem('finanlist_last_account');
+        const rememberedCard = lastCardId ? activeCards.find(c => c.id === lastCardId) : undefined;
+
+        if (rememberedCard) {
+          setCardId(rememberedCard.id);
+          setAccount(rememberedCard.name);
+        } else if (lastAccount === 'Efectivo') {
+          setCardId(undefined);
+          setAccount('Efectivo');
+        } else if (activeCards.length > 0) {
           setCardId(activeCards[0].id);
           setAccount(activeCards[0].name);
         } else {
@@ -279,6 +307,17 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
         });
       } else {
         await addTransaction(transactionData);
+        try {
+          if (selectedCard) {
+            localStorage.setItem('finanlist_last_card_id', selectedCard.id);
+            localStorage.setItem('finanlist_last_account', selectedCard.name);
+          } else {
+            localStorage.removeItem('finanlist_last_card_id');
+            localStorage.setItem('finanlist_last_account', 'Efectivo');
+          }
+        } catch {
+          // Ignore localStorage errors in private mode
+        }
       }
       onClose();
     } catch (err) {
@@ -293,53 +332,102 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
 
   return (
     <div className={`modal-overlay ${isOpen ? 'open' : ''}`} onClick={onClose}>
-      <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>{editTransaction ? 'Editar Movimiento' : 'Nuevo Movimiento'}</h2>
+      <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={styles.modalSheet}>
+        {/* Sticky Modal Header */}
+        <div style={styles.modalHeader}>
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>
+            {editTransaction ? 'Editar Movimiento' : 'Nuevo Movimiento'}
+          </h2>
           <button className="btn-ghost" onClick={onClose} style={styles.closeBtn}>
             <DynamicIcon name="X" size={24} color="var(--text-secondary)" />
           </button>
         </div>
 
-        {/* Expense/Income Toggle */}
-        <div style={styles.typeToggle}>
-          <button
-            onClick={() => setType('expense')}
-            style={{
-              ...styles.toggleBtn,
-              backgroundColor: type === 'expense' ? 'var(--color-danger-light)' : 'transparent',
-              color: type === 'expense' ? 'var(--color-danger)' : 'var(--text-secondary)',
-              borderColor: type === 'expense' ? 'var(--color-danger)' : 'transparent',
-            }}
-          >
-            Gasto
-          </button>
-          <button
-            onClick={() => setType('income')}
-            style={{
-              ...styles.toggleBtn,
-              backgroundColor: type === 'income' ? 'var(--color-success-light)' : 'transparent',
-              color: type === 'income' ? 'var(--color-success)' : 'var(--text-secondary)',
-              borderColor: type === 'income' ? 'var(--color-success)' : 'transparent',
-            }}
-          >
-            Ingreso
-          </button>
-        </div>
+        {/* Scrollable Modal Content */}
+        <div style={styles.modalBody}>
+          {/* Expense/Income Toggle */}
+          <div style={styles.typeToggle}>
+            <button
+              onClick={() => setType('expense')}
+              style={{
+                ...styles.toggleBtn,
+                backgroundColor: type === 'expense' ? 'var(--color-danger-light)' : 'transparent',
+                color: type === 'expense' ? 'var(--color-danger)' : 'var(--text-secondary)',
+                borderColor: type === 'expense' ? 'var(--color-danger)' : 'transparent',
+              }}
+            >
+              Gasto
+            </button>
+            <button
+              onClick={() => setType('income')}
+              style={{
+                ...styles.toggleBtn,
+                backgroundColor: type === 'income' ? 'var(--color-success-light)' : 'transparent',
+                color: type === 'income' ? 'var(--color-success)' : 'var(--text-secondary)',
+                borderColor: type === 'income' ? 'var(--color-success)' : 'transparent',
+              }}
+            >
+              Ingreso
+            </button>
+          </div>
 
-        {/* Big Amount Input */}
-        <div style={styles.amountContainer}>
-          <span style={styles.currencySymbol}>{profile.currency}</span>
-          <input
-            type="number"
-            inputMode="decimal"
-            placeholder="0.00"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            style={styles.amountInput}
-            autoFocus
-          />
-        </div>
+          {/* Big Amount Input */}
+          <div style={styles.amountContainer}>
+            <span style={styles.currencySymbol}>{profile.currency}</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              pattern="[0-9]*[.,]?[0-9]*"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => {
+                const val = e.target.value.replace(',', '.');
+                if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                  setAmount(val);
+                }
+              }}
+              style={styles.amountInput}
+              autoFocus
+            />
+          </div>
+
+          {/* 1-Tap Quick Frequent Categories Chips */}
+          {frequentCategories.length > 0 && (
+            <div style={styles.frequentSection}>
+              <div style={styles.frequentLabel}>
+                <DynamicIcon name="Zap" size={13} color="var(--color-primary)" />
+                <span>Categorías frecuentes (1 toque)</span>
+              </div>
+              <div style={styles.frequentChipsList}>
+                {frequentCategories.map(cat => {
+                  const isSelected = selectedCatId === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCatId(cat.id);
+                        setSelectedSubCatId('');
+                        setSuggestedCatId('');
+                      }}
+                      style={{
+                        ...styles.frequentChip,
+                        backgroundColor: isSelected ? `${cat.color}25` : 'var(--bg-card)',
+                        borderColor: isSelected ? cat.color : 'var(--border-color)',
+                        color: isSelected ? cat.color : 'var(--text-primary)',
+                        fontWeight: isSelected ? '700' : '500',
+                      }}
+                    >
+                      <div style={{ ...styles.frequentChipIcon, backgroundColor: cat.color }}>
+                        <DynamicIcon name={cat.icon} size={11} color="white" />
+                      </div>
+                      <span>{cat.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
         {/* Payment Method / Card Selection */}
         <div className="input-group">
@@ -553,19 +641,20 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px', margin: '4px 0' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px', margin: '6px 0' }}>
                 {['#ff4d4d', '#3399ff', '#b366ff', '#ff66b2', '#ffcc00', '#22c55e', '#00cccc', '#e11d48', '#f97316', '#a855f7', '#06b6d4', '#71717a'].map(color => (
                   <button
                     key={color}
                     type="button"
                     onClick={() => setInlineCatColor(color)}
                     style={{
-                      height: '18px',
-                      width: '18px',
+                      height: '32px',
+                      width: '32px',
                       borderRadius: '50%',
                       backgroundColor: color,
                       border: 'none',
-                      outline: inlineCatColor === color ? '2px solid var(--text-primary)' : 'none',
+                      outline: inlineCatColor === color ? '3px solid var(--text-primary)' : 'none',
+                      outlineOffset: '2px',
                       cursor: 'pointer',
                       justifySelf: 'center'
                     }}
@@ -817,28 +906,67 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
           </div>
         )}
 
-        <button 
-          className="btn btn-primary" 
-          onClick={handleSave} 
-          disabled={isSaving}
-          style={{ 
-            marginTop: '10px',
-            opacity: isSaving ? 0.7 : 1,
-            cursor: isSaving ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {isSaving ? 'Guardando...' : (editTransaction ? 'Guardar Cambios' : 'Registrar Movimiento')}
-        </button>
+        </div>
+        {/* End modalBody */}
+
+        {/* Sticky Action Bar */}
+        <div style={styles.stickyFooter}>
+          <button 
+            className="btn btn-primary" 
+            onClick={handleSave} 
+            disabled={isSaving}
+            style={{ 
+              width: '100%',
+              minHeight: '48px',
+              fontSize: '15px',
+              fontWeight: '700',
+              boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
+              opacity: isSaving ? 0.7 : 1,
+              cursor: isSaving ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {isSaving ? 'Guardando...' : (editTransaction ? 'Guardar Cambios' : 'Registrar Movimiento')}
+          </button>
+        </div>
       </div>
     </div>
   );
 };
 
 const styles: Record<string, React.CSSProperties> = {
+  modalSheet: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    maxHeight: '100%',
+    padding: 0,
+    overflow: 'hidden',
+    backgroundColor: 'var(--bg-phone)',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '16px 20px',
+    borderBottom: '1px solid var(--border-color)',
+    flexShrink: 0,
+    backgroundColor: 'var(--bg-card)',
+  },
+  modalBody: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '16px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+    WebkitOverflowScrolling: 'touch',
+  },
   closeBtn: {
     border: 'none',
     background: 'none',
     cursor: 'pointer',
+    padding: '4px',
+    borderRadius: '8px',
   },
   typeToggle: {
     display: 'flex',
@@ -863,7 +991,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     alignItems: 'center',
     gap: '6px',
-    margin: '10px 0',
+    margin: '6px 0',
   },
   currencySymbol: {
     fontSize: '36px',
@@ -878,9 +1006,51 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     background: 'none',
     outline: 'none',
-    width: '180px',
+    width: '200px',
     textAlign: 'left',
     fontFamily: 'var(--font-display)',
+  },
+  frequentSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    margin: '-4px 0 2px 0',
+  },
+  frequentLabel: {
+    fontSize: '11px',
+    fontWeight: '700',
+    color: 'var(--text-secondary)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  frequentChipsList: {
+    display: 'flex',
+    gap: '8px',
+    overflowX: 'auto',
+    padding: '2px 0 6px 0',
+    WebkitOverflowScrolling: 'touch',
+  },
+  frequentChip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '7px 12px',
+    borderRadius: '20px',
+    border: '1px solid var(--border-color)',
+    fontSize: '12px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    transition: 'all 0.15s ease',
+    flexShrink: 0,
+  },
+  frequentChipIcon: {
+    width: '18px',
+    height: '18px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   horizontalScroll: {
     display: 'flex',
@@ -905,11 +1075,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   categoryGridItem: {
     padding: '12px 6px',
+    minHeight: '62px',
     borderRadius: '14px',
     border: '1px solid var(--border-color)',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: '6px',
     cursor: 'pointer',
     transition: 'all 0.1s ease',
@@ -1005,12 +1177,24 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--color-danger)',
     border: 'none',
     borderRadius: '50%',
-    width: '18px',
-    height: '18px',
+    width: '28px',
+    height: '28px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
+  },
+  stickyFooter: {
+    position: 'sticky',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: '12px 20px',
+    paddingBottom: 'max(14px, env(safe-area-inset-bottom, 14px))',
+    backgroundColor: 'var(--bg-card)',
+    borderTop: '1px solid var(--border-color)',
+    zIndex: 20,
+    flexShrink: 0,
   },
 };
 export default TransactionModal;

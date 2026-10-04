@@ -1,9 +1,9 @@
-import { Transaction, PaymentCard, Budget } from '../models/types';
+import { Transaction, PaymentCard, Budget, Debt } from '../models/types';
 import { roundCurrency, safeSubtract } from '../utils/currencyUtils';
 import { getTodayDateString } from '../utils/dateUtils';
 
 export interface FinancialEngineSummary {
-  // Saldo Total Consolidado (Patrimonio Neto Líquido): Dinero Disponible - Deuda de Tarjetas de Crédito
+  // Saldo Total Consolidado (Patrimonio Neto Total): Activos (Líquidos + Inversiones + Por Cobrar) - Pasivos (Tarjetas + Deudas)
   consolidatedNetBalance: number;
 
   // Dinero Disponible Líquido (Efectivo + Cuentas Bancarias / Débito)
@@ -18,10 +18,14 @@ export interface FinancialEngineSummary {
   // Límite de Crédito Total aprobado
   totalCreditLimit: number;
 
-  // Desglose de activos líquidos por tipo de cuenta
+  // Desglose de activos por tipo de cuenta
   cashBalance: number;
   bankBalance: number;
   investmentsBalance: number;
+
+  // Deudas y cuentas por cobrar
+  totalReceivables: number; // Préstamos otorgados a otros pendientes de cobro (Activo)
+  totalOwedDebts: number;   // Deudas adquiridas pendientes de pago a terceros (Pasivo)
 
   // Métricas mensuales del mes en curso
   monthlyIncome: number;
@@ -55,7 +59,8 @@ export class FinancialEngine {
     transactions: Transaction[],
     cards: PaymentCard[],
     budgets: Budget[] = [],
-    dateFilter?: (dateStr: string) => boolean
+    dateFilter?: (dateStr: string) => boolean,
+    debts: Debt[] = []
   ): FinancialEngineSummary {
     const currentYM = this.getCurrentYearMonth();
 
@@ -144,10 +149,24 @@ export class FinancialEngine {
 
     const availableLiquidCash = roundCurrency(cashTotal + bankTotal);
 
-    // 5. Saldo Total Consolidado (Patrimonio Neto): Activos Líquidos - Deuda de Tarjetas de Crédito
-    const consolidatedNetBalance = roundCurrency(safeSubtract(availableLiquidCash, totalCreditCardDebt));
+    // 5. Cuentas por Cobrar (dinero prestado a terceros) y Deudas Personales (por pagar)
+    const activeReceivables = (debts || []).filter(d => d.type === 'lent' && d.remainingAmount > 0);
+    const totalReceivables = roundCurrency(
+      activeReceivables.reduce((sum, d) => sum + (d.remainingAmount ?? d.amount ?? 0), 0)
+    );
 
-    // 6. Progreso del presupuesto
+    const activePayables = (debts || []).filter(d => d.type === 'borrowed' && d.remainingAmount > 0);
+    const totalOwedDebts = roundCurrency(
+      activePayables.reduce((sum, d) => sum + (d.remainingAmount ?? d.amount ?? 0), 0)
+    );
+
+    // 6. Saldo Total Consolidado (Patrimonio Neto Total):
+    // (Activos Líquidos + Inversiones + Cuentas por Cobrar) - (Deuda Tarjetas + Préstamos por Pagar)
+    const totalAssets = roundCurrency(availableLiquidCash + investmentsTotal + totalReceivables);
+    const totalLiabilities = roundCurrency(totalCreditCardDebt + totalOwedDebts);
+    const consolidatedNetBalance = roundCurrency(safeSubtract(totalAssets, totalLiabilities));
+
+    // 7. Progreso del presupuesto
     let budgetProgress = 0;
     const monthlyTotalBudget = budgets.find(b => b.type === 'monthly');
     if (monthlyTotalBudget && monthlyTotalBudget.amount > 0) {
@@ -187,10 +206,78 @@ export class FinancialEngine {
       cashBalance: cashTotal,
       bankBalance: bankTotal,
       investmentsBalance: investmentsTotal,
+      totalReceivables,
+      totalOwedDebts,
       monthlyIncome: roundCurrency(monthlyIncome),
       monthlyExpense: roundCurrency(monthlyExpense),
       monthlySavings: roundCurrency(monthlySavings),
       budgetProgress: roundCurrency(budgetProgress)
+    };
+  }
+
+  /**
+   * Calcula los días restantes para el día de corte de una tarjeta de crédito.
+   */
+  static getDaysUntilCutoff(cutoffDay: number = 15, fromDate: Date = new Date()): {
+    days: number;
+    nextDate: Date;
+    isToday: boolean;
+  } {
+    const today = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+    const currentDay = today.getDate();
+    
+    let targetMonth = today.getMonth();
+    let targetYear = today.getFullYear();
+    
+    if (currentDay > cutoffDay) {
+      targetMonth += 1;
+      if (targetMonth > 11) {
+        targetMonth = 0;
+        targetYear += 1;
+      }
+    }
+    
+    const targetDate = new Date(targetYear, targetMonth, cutoffDay);
+    const diffTime = targetDate.getTime() - today.getTime();
+    const days = Math.max(0, Math.round(diffTime / (1000 * 60 * 60 * 24)));
+    
+    return {
+      days,
+      nextDate: targetDate,
+      isToday: days === 0
+    };
+  }
+
+  /**
+   * Calcula los días restantes para la fecha límite de pago de una tarjeta de crédito.
+   */
+  static getDaysUntilPaymentDue(paymentDueDay: number = 5, fromDate: Date = new Date()): {
+    days: number;
+    nextDate: Date;
+    isToday: boolean;
+  } {
+    const today = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+    const currentDay = today.getDate();
+    
+    let targetMonth = today.getMonth();
+    let targetYear = today.getFullYear();
+    
+    if (currentDay > paymentDueDay) {
+      targetMonth += 1;
+      if (targetMonth > 11) {
+        targetMonth = 0;
+        targetYear += 1;
+      }
+    }
+    
+    const targetDate = new Date(targetYear, targetMonth, paymentDueDay);
+    const diffTime = targetDate.getTime() - today.getTime();
+    const days = Math.max(0, Math.round(diffTime / (1000 * 60 * 60 * 24)));
+    
+    return {
+      days,
+      nextDate: targetDate,
+      isToday: days === 0
     };
   }
 }

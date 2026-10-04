@@ -594,10 +594,11 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Animations */
-@keyframes fadeInUp {
+/* Smooth fade transition */
+@keyframes smoothFadeIn {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -606,7 +607,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .animate-fade-in {
-  animation: fadeInUp var(--transition-slow) forwards;
+  animation: smoothFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Modal scale & fade pop-in animation */

@@ -23,7 +23,8 @@ export const BudgetView: React.FC = () => {
     deleteDebt,
     addCategory,
     stealthMode,
-    setStealthMode
+    setStealthMode,
+    cards
   } = useApp();
 
 
@@ -394,11 +395,24 @@ export const BudgetView: React.FC = () => {
 
     const catObj = categories.find(c => c.id === categoryId);
 
+    const activeCards = cards.filter(c => c.isActive);
+    const lastCardId = localStorage.getItem('finanlist_last_card_id');
+    const defaultCard = (lastCardId && activeCards.find(c => c.id === lastCardId)) || activeCards[0];
+
+    let resolvedCardId: string | undefined = undefined;
+    let resolvedAccount = quickExpenseAccount;
+
+    if (quickExpenseAccount === 'Tarjeta' && defaultCard) {
+      resolvedCardId = defaultCard.id;
+      resolvedAccount = defaultCard.name;
+    }
+
     addTransaction({
       amount,
       type: 'expense',
       categoryId,
-      account: quickExpenseAccount,
+      account: resolvedAccount,
+      cardId: resolvedCardId,
       date: now.toISOString().split('T')[0],
       time: now.toTimeString().split(' ')[0].slice(0, 5),
       notes: noteText || `Gasto en ${quickExpenseBudget.name}`,

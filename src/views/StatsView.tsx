@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { StatsService } from '../services/StatsService';
-import { PdfReportService } from '../services/PdfReportService';
 import { IncomeExpenseBarChart, CashFlowLineChart } from '../components/FinancialCharts';
 import { DynamicIcon } from '../components/DynamicIcon';
 
@@ -78,9 +77,10 @@ export const StatsView: React.FC = () => {
     });
 
     const totalSpent = needs + wants + savings;
-    const needsPct = totalSpent > 0 ? (needs / totalSpent) * 100 : 0;
-    const wantsPct = totalSpent > 0 ? (wants / totalSpent) * 100 : 0;
-    const savingsPct = totalSpent > 0 ? (savings / totalSpent) * 100 : 0;
+    const baseBudget = totalIncome > 0 ? totalIncome : totalSpent;
+    const needsPct = baseBudget > 0 ? (needs / baseBudget) * 100 : 0;
+    const wantsPct = baseBudget > 0 ? (wants / baseBudget) * 100 : 0;
+    const savingsPct = baseBudget > 0 ? (savings / baseBudget) * 100 : 0;
 
     let score = 100;
     let status = 'Distribución Excelente';
@@ -145,8 +145,9 @@ export const StatsView: React.FC = () => {
   const [reportPeriod, setReportPeriod] = useState<string>(getPrevMonthYM());
   const [reportEmission, setReportEmission] = useState<string>(getCurrentDateTimeLocal());
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     try {
+      const { PdfReportService } = await import('../services/PdfReportService');
       const doc = PdfReportService.generateMonthlyReport(
         transactions,
         budgets,

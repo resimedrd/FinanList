@@ -1,4 +1,4 @@
-import { Transaction, Budget, PaymentCard } from '../models/types';
+import { Transaction, Budget, PaymentCard, Debt } from '../models/types';
 import { parseLocalDate, getDaysInMonth } from '../utils/dateUtils';
 import { FinancialEngine } from './FinancialEngine';
 
@@ -18,7 +18,8 @@ export class StatsService {
     transactions: Transaction[],
     budgets: Budget[],
     cards: PaymentCard[] = [],
-    dateFilter?: (dateStr: string) => boolean
+    dateFilter?: (dateStr: string) => boolean,
+    debts: Debt[] = []
   ): {
     totalBalance: number;
     availableCash: number;
@@ -33,8 +34,10 @@ export class StatsService {
     cashBalance: number;
     bankBalance: number;
     investmentsBalance: number;
+    totalReceivables: number;
+    totalOwedDebts: number;
   } {
-    const summary = FinancialEngine.calculateSummary(transactions, cards, budgets, dateFilter);
+    const summary = FinancialEngine.calculateSummary(transactions, cards, budgets, dateFilter, debts);
 
     return {
       totalBalance: summary.consolidatedNetBalance,
@@ -49,7 +52,9 @@ export class StatsService {
       totalCreditLimit: summary.totalCreditLimit,
       cashBalance: summary.cashBalance,
       bankBalance: summary.bankBalance,
-      investmentsBalance: summary.investmentsBalance
+      investmentsBalance: summary.investmentsBalance,
+      totalReceivables: summary.totalReceivables,
+      totalOwedDebts: summary.totalOwedDebts
     };
   }
 

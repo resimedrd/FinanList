@@ -1,7 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { StatsService } from '../services/StatsService';
-import { PdfReportService } from '../services/PdfReportService';
 import { DonutChart } from '../components/DonutChart';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { Transaction, Budget } from '../models/types';
@@ -68,8 +67,9 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
   const monthlyReportData = getMonthlyBudgetReportStatus();
   const [showMonthlyBudgetCard, setShowMonthlyBudgetCard] = React.useState<boolean>(monthlyReportData.shouldShow);
 
-  const handleDownloadMonthlyBudgetReport = () => {
+  const handleDownloadMonthlyBudgetReport = async () => {
     try {
+      const { PdfReportService } = await import('../services/PdfReportService');
       const doc = PdfReportService.generateMonthlyReport(
         transactions,
         budgets,
@@ -107,7 +107,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
   const quoteIdx = new Date().getDate() % FINANCE_QUOTES.length;
   const quoteOfTheDay = FINANCE_QUOTES[quoteIdx];
 
-  const summary = StatsService.getSummary(transactions, budgets, cards);
+  const summary = StatsService.getSummary(transactions, budgets, cards, undefined, debts);
   const chartData = StatsService.getExpenseByCategory(transactions);
   
   // Format Currency Helper (with Stealth support)
@@ -119,6 +119,37 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
   const formatAccountVal = (val: number) => {
     if (stealthMode) return '••••';
     return `${profile.currency}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const renderHierarchicalBalance = (val: number) => {
+    if (stealthMode) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '4px' }}>
+          <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-secondary)' }}>{profile.currency}</span>
+          <span style={{ fontSize: '32px', fontWeight: '800' }}>••••</span>
+        </span>
+      );
+    }
+    const isNegative = val < 0;
+    const absVal = Math.abs(val);
+    const parts = absVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).split('.');
+    const integerPart = parts[0];
+    const decimalPart = parts[1] || '00';
+
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '2px', fontFamily: 'var(--font-display)' }}>
+        {isNegative && <span style={{ fontSize: '26px', fontWeight: '800', color: 'var(--color-danger)' }}>-</span>}
+        <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-secondary)', marginRight: '2px' }}>
+          {profile.currency}
+        </span>
+        <span style={{ fontSize: '36px', fontWeight: '800', color: isNegative ? 'var(--color-danger)' : 'var(--text-primary)', letterSpacing: '-0.5px' }}>
+          {integerPart}
+        </span>
+        <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+          .{decimalPart}
+        </span>
+      </span>
+    );
   };
 
   const getWeeklyReport = () => {
@@ -247,11 +278,24 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
 
     const catObj = categories.find(c => c.id === categoryId);
 
+    const activeCards = cards.filter(c => c.isActive);
+    const lastCardId = localStorage.getItem('finanlist_last_card_id');
+    const defaultCard = (lastCardId && activeCards.find(c => c.id === lastCardId)) || activeCards[0];
+
+    let resolvedCardId: string | undefined = undefined;
+    let resolvedAccount = quickExpenseAccount;
+
+    if (quickExpenseAccount === 'Tarjeta' && defaultCard) {
+      resolvedCardId = defaultCard.id;
+      resolvedAccount = defaultCard.name;
+    }
+
     addTransaction({
       amount,
       type: 'expense',
       categoryId,
-      account: quickExpenseAccount,
+      account: resolvedAccount,
+      cardId: resolvedCardId,
       date: now.toISOString().split('T')[0],
       time: now.toTimeString().split(' ')[0].slice(0, 5),
       notes: noteText || `Gasto en ${quickExpenseTarget.name}`,
@@ -453,19 +497,47 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         <div style={styles.balanceHeader}>
           <span>Saldo Total Consolidado</span>
           <span style={{ fontSize: '11px', fontWeight: '500', color: 'var(--text-muted)' }}>
-            Patrimonio Líquido
+            Patrimonio Total
           </span>
         </div>
-        <h1 style={styles.balanceValue}>{formatVal(summary.consolidatedNetBalance)}</h1>
+        <div style={styles.balanceValue}>{renderHierarchicalBalance(summary.consolidatedNetBalance)}</div>
 
-        {/* Desglose consolidado: Efectivo, Banco, Deuda de Tarjetas y Crédito */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '-8px', marginBottom: '4px' }}>
+        {/* Desglose consolidado: Efectivo, Banco, Deuda de Tarjetas, Cuentas por Cobrar y Préstamos */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '-4px', marginBottom: '6px' }}>
           <span style={styles.availableBadge} title="Dinero en efectivo físico disponible">
             💵 Efectivo: {formatAccountVal(summary.cashBalance)}
           </span>
           <span style={styles.availableBadge} title="Saldo en cuentas bancarias y tarjetas de débito">
             🏦 Banco: {formatAccountVal(summary.bankBalance)}
           </span>
+          {summary.investmentsBalance > 0 && (
+            <span 
+              style={{
+                ...styles.availableBadge,
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                color: '#8b5cf6',
+                border: '1px solid rgba(139, 92, 246, 0.25)',
+                fontWeight: '600'
+              }}
+              title="Portafolio de Inversiones (activo)"
+            >
+              📈 Inversiones: {formatAccountVal(summary.investmentsBalance)}
+            </span>
+          )}
+          {summary.totalReceivables > 0 && (
+            <span 
+              style={{
+                ...styles.availableBadge,
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                color: 'var(--color-success)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                fontWeight: '600'
+              }}
+              title="Préstamos otorgados a otros pendientes de cobro (activo)"
+            >
+              🤝 Por cobrar: +{formatAccountVal(summary.totalReceivables)}
+            </span>
+          )}
           {summary.totalCreditCardDebt > 0 && (
             <span 
               style={{
@@ -478,6 +550,20 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
               title="Deuda acumulada en tarjetas de crédito (pasivo)"
             >
               💳 Deuda Tarjetas: -{formatAccountVal(summary.totalCreditCardDebt)}
+            </span>
+          )}
+          {summary.totalOwedDebts > 0 && (
+            <span 
+              style={{
+                ...styles.availableBadge,
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                color: 'var(--color-danger)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                fontWeight: '600'
+              }}
+              title="Préstamos adquiridos pendientes de pago (pasivo)"
+            >
+              ⏳ Por pagar: -{formatAccountVal(summary.totalOwedDebts)}
             </span>
           )}
           <span 
@@ -656,7 +742,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         </div>
         {chartData.length > 0 ? (
           <div style={styles.chartLayout}>
-            <DonutChart data={chartData} total={summary.monthlyExpense} currency={profile.currency} />
+            <DonutChart data={chartData} total={summary.monthlyExpense} currency={profile.currency} stealthMode={stealthMode} />
             <div style={styles.chartLegendGrid}>
               {chartData.slice(0, 3).map((item) => (
                 <div key={item.categoryId} style={styles.legendItem}>
@@ -669,7 +755,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '10px 0' }}>
-            <DonutChart data={[]} total={0} currency={profile.currency} />
+            <DonutChart data={[]} total={0} currency={profile.currency} stealthMode={stealthMode} />
             <span style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
               Registra un gasto este mes para ver tu distribución.
             </span>
@@ -1174,9 +1260,14 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'none',
     border: 'none',
     cursor: 'pointer',
-    padding: '6px',
-    opacity: 0.7,
-    transition: 'opacity 0.1s ease',
+    minWidth: '40px',
+    minHeight: '40px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '8px',
+    opacity: 0.8,
+    transition: 'all 0.15s ease',
   },
 };
 export default HomeView;

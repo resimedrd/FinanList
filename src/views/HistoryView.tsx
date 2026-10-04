@@ -694,9 +694,14 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'none',
     border: 'none',
     cursor: 'pointer',
-    padding: '6px',
-    opacity: 0.7,
-    transition: 'opacity 0.1s ease',
+    minWidth: '40px',
+    minHeight: '40px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '8px',
+    opacity: 0.8,
+    transition: 'all 0.15s ease',
   },
 };
 export default HistoryView;

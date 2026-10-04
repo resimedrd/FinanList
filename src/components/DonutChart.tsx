@@ -11,9 +11,10 @@ interface DonutChartProps {
   }>;
   total: number;
   currency: string;
+  stealthMode?: boolean;
 }
 
-export const DonutChart: React.FC<DonutChartProps> = ({ data, total, currency }) => {
+export const DonutChart: React.FC<DonutChartProps> = ({ data, total, currency, stealthMode = false }) => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   // SVG properties
@@ -38,7 +39,7 @@ export const DonutChart: React.FC<DonutChartProps> = ({ data, total, currency })
         </svg>
         <div style={styles.centerLabel}>
           <div style={styles.centerTextLabel}>Total</div>
-          <div style={styles.centerValue}>{currency}0</div>
+          <div style={styles.centerValue}>{stealthMode ? '••••' : `${currency}0`}</div>
         </div>
       </div>
     );
@@ -104,7 +105,9 @@ export const DonutChart: React.FC<DonutChartProps> = ({ data, total, currency })
           {displayLabel}
         </span>
         <span style={styles.centerValue}>
-          {currency}{displayValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {stealthMode
+            ? '••••'
+            : `${currency}${displayValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
         </span>
         {displayPercent && (
           <span style={styles.centerPercentLabel}>

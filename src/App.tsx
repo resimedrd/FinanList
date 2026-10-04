@@ -1,19 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { LocalRepository } from './repositories/LocalRepository';
-import { LockScreen } from './views/LockScreen';
 import { HomeView } from './views/HomeView';
-import { HistoryView } from './views/HistoryView';
-import { BudgetView } from './views/BudgetView';
-import { StatsView } from './views/StatsView';
-import { ProfileView } from './views/ProfileView';
-import { OnboardingView } from './views/OnboardingView';
 import { TransactionModal } from './components/TransactionModal';
 import { DynamicIcon } from './components/DynamicIcon';
 import { Transaction } from './models/types';
 import { WelcomeTour } from './components/WelcomeTour';
 import { InstallPrompt } from './components/InstallPrompt';
-import { CardsView } from './views/CardsView';
+
+// Route-level Code Splitting for ultra-fast initial bundle
+const HistoryView = React.lazy(() => import('./views/HistoryView').then(m => ({ default: m.HistoryView })));
+const BudgetView = React.lazy(() => import('./views/BudgetView').then(m => ({ default: m.BudgetView })));
+const StatsView = React.lazy(() => import('./views/StatsView').then(m => ({ default: m.StatsView })));
+const ProfileView = React.lazy(() => import('./views/ProfileView').then(m => ({ default: m.ProfileView })));
+const CardsView = React.lazy(() => import('./views/CardsView').then(m => ({ default: m.CardsView })));
+const OnboardingView = React.lazy(() => import('./views/OnboardingView').then(m => ({ default: m.OnboardingView })));
+const LockScreen = React.lazy(() => import('./views/LockScreen').then(m => ({ default: m.LockScreen })));
+
+const ViewFallback: React.FC = () => (
+  <div style={{ flex: 1, minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{
+      width: '28px',
+      height: '28px',
+      border: '3px solid var(--border-color)',
+      borderTopColor: 'var(--color-primary)',
+      borderRadius: '50%',
+      animation: 'spin 0.8s linear infinite'
+    }} />
+  </div>
+);
 
 const MainLayout: React.FC = () => {
   const { isAuthenticated, activeTab, setActiveTab, isOnboarded, profile, setAuthenticated, authLoading } = useApp();
@@ -210,7 +225,9 @@ const MainLayout: React.FC = () => {
   if (!isOnboarded) {
     return (
       <div className="phone-viewport">
-        <OnboardingView />
+        <Suspense fallback={<ViewFallback />}>
+          <OnboardingView />
+        </Suspense>
       </div>
     );
   }
@@ -219,7 +236,9 @@ const MainLayout: React.FC = () => {
   if (!isAuthenticated) {
     return (
       <div className="phone-viewport">
-        <LockScreen />
+        <Suspense fallback={<ViewFallback />}>
+          <LockScreen />
+        </Suspense>
       </div>
     );
   }
@@ -230,7 +249,9 @@ const MainLayout: React.FC = () => {
       <div className="safe-area-top" />
       
       {/* Main active view component */}
-      {renderActiveView()}
+      <Suspense fallback={<ViewFallback />}>
+        {renderActiveView()}
+      </Suspense>
 
       {/* Global Transaction Bottom Sheet Modal */}
       <TransactionModal
