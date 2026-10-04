@@ -1532,8 +1532,8 @@ export const BudgetView: React.FC = () => {
           <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Registrar Deuda / Préstamo</h2>
-              <button className="btn-ghost" onClick={handleCloseDebtModal}>
-                <DynamicIcon name="X" size={24} color="var(--text-secondary)" />
+              <button className="btn-ghost" onClick={handleCloseDebtModal} aria-label="Cerrar" title="Cerrar">
+                <DynamicIcon name="X" size={20} color="var(--text-primary)" />
               </button>
             </div>
 
@@ -1645,8 +1645,8 @@ export const BudgetView: React.FC = () => {
           <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{editingBudget ? 'Editar Presupuesto' : 'Nuevo Presupuesto'}</h2>
-              <button className="btn-ghost" onClick={handleCloseBudgetModal}>
-                <DynamicIcon name="X" size={24} color="var(--text-secondary)" />
+              <button className="btn-ghost" onClick={handleCloseBudgetModal} aria-label="Cerrar" title="Cerrar">
+                <DynamicIcon name="X" size={20} color="var(--text-primary)" />
               </button>
             </div>
 
@@ -1839,8 +1839,8 @@ export const BudgetView: React.FC = () => {
           <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{editingGoal ? 'Editar Meta de Ahorro' : 'Nueva Meta de Ahorro'}</h2>
-              <button className="btn-ghost" onClick={handleCloseGoalModal}>
-                <DynamicIcon name="X" size={24} color="var(--text-secondary)" />
+              <button className="btn-ghost" onClick={handleCloseGoalModal} aria-label="Cerrar" title="Cerrar">
+                <DynamicIcon name="X" size={20} color="var(--text-primary)" />
               </button>
             </div>
 

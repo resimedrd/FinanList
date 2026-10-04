@@ -63,6 +63,8 @@ export const Modal: React.FC<ModalProps> = ({
         alignItems: 'center',
         justifyContent: 'center',
         padding: '16px',
+        paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 48px) + 12px)',
+        paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 16px) + 12px)',
         zIndex: 99999,
         overscrollBehavior: 'contain',
       }}
@@ -76,7 +78,7 @@ export const Modal: React.FC<ModalProps> = ({
           borderRadius: '24px',
           width: '100%',
           maxWidth,
-          maxHeight: 'calc(100dvh - 36px)',
+          maxHeight: 'calc(100dvh - max(env(safe-area-inset-top, 0px), 48px) - max(env(safe-area-inset-bottom, 0px), 16px) - 36px)',
           display: 'flex',
           flexDirection: 'column',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05)',
@@ -106,15 +108,21 @@ export const Modal: React.FC<ModalProps> = ({
               type="button"
               onClick={onClose}
               style={{
-                background: 'none',
-                border: 'none',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
                 cursor: 'pointer',
-                color: 'var(--text-secondary)',
-                display: 'flex',
+                color: 'var(--text-primary)',
+                display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '6px',
-                borderRadius: '8px',
+                width: '40px',
+                height: '40px',
+                minWidth: '40px',
+                minHeight: '40px',
+                borderRadius: '10px',
+                touchAction: 'manipulation',
+                padding: 0,
+                transition: 'all var(--transition-fast)',
               }}
               title="Cerrar"
             >

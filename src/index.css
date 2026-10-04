@@ -85,9 +85,15 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+html {
+  height: 100%;
+  height: -webkit-fill-available;
+}
+
 html, body, #root {
   width: 100%;
   height: 100%;
+  height: 100dvh;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -103,6 +109,10 @@ body {
   overflow: hidden;
   overscroll-behavior: none;
   position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Scrollbar styling for list elements */
@@ -130,6 +140,8 @@ body {
   bottom: 0;
   width: 100%;
   height: 100%;
+  height: 100dvh;
+  min-height: -webkit-fill-available;
   background-color: var(--bg-phone);
   overflow: hidden;
   overscroll-behavior: none;
@@ -139,6 +151,8 @@ body {
 .phone-viewport {
   width: 100%;
   height: 100%;
+  height: 100dvh;
+  min-height: -webkit-fill-available;
   background-color: var(--bg-phone);
   display: flex;
   flex-direction: column;
@@ -477,8 +491,9 @@ h1, h2, h3, h4, h5, h6 {
   background-color: var(--bg-phone);
   border-top-left-radius: 0;
   border-top-right-radius: 0;
-  padding: 24px;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  padding: 20px;
+  padding-top: calc(max(env(safe-area-inset-top, 0px), 48px) + 12px);
+  padding-bottom: calc(24px + max(env(safe-area-inset-bottom, 0px), 16px));
   box-shadow: none;
   display: flex;
   flex-direction: column;
@@ -486,6 +501,13 @@ h1, h2, h3, h4, h5, h6 {
   overflow-y: auto;
   transform: translateY(100%);
   transition: transform var(--transition-normal);
+  overscroll-behavior: contain;
+}
+
+@media (min-width: 768px) {
+  .modal-sheet {
+    padding-top: 55px;
+  }
 }
 
 .modal-overlay.open .modal-sheet {
@@ -501,6 +523,57 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  min-height: 48px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  background-color: var(--bg-phone);
+  z-index: 30;
+  flex-shrink: 0;
+}
+
+.modal-header h2 {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.modal-header button,
+.modal-header .btn-ghost,
+.modal-header .modal-close {
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: all var(--transition-fast);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.modal-header button:hover,
+.modal-header .btn-ghost:hover,
+.modal-header .modal-close:hover {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-focus);
+}
+
+.modal-header button:active,
+.modal-header .btn-ghost:active,
+.modal-header .modal-close:active {
+  transform: scale(0.92);
+  background-color: var(--bg-card-hover);
 }
 
 /* Transaction List Items */
