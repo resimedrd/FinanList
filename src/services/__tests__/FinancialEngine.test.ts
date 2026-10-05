@@ -218,8 +218,8 @@ describe('FinancialEngine', () => {
 
     const summary = FinancialEngine.calculateSummary(legacyTxs, []);
 
-    expect(summary.bankBalance).toBe(6500);
-    expect(summary.cashBalance).toBe(0);
+    // Without a registered card, legacy transactions resolve to direct cash liquidity
+    expect(summary.cashBalance).toBe(6500);
     expect(summary.availableLiquidCash).toBe(6500);
     expect(summary.totalCreditCardDebt).toBe(0);
     expect(summary.consolidatedNetBalance).toBe(6500);
@@ -312,5 +312,112 @@ describe('FinancialEngine', () => {
     const dueFuture = FinancialEngine.getDaysUntilPaymentDue(25, testDate);
     expect(dueFuture.days).toBe(15);
     expect(dueFuture.isToday).toBe(false);
+  });
+
+  describe('Decoupled Validation Engine & Financial Rules', () => {
+    const mockSummary = FinancialEngine.calculateSummary(
+      [
+        {
+          id: 'tx_c1',
+          amount: 2500,
+          type: 'income',
+          categoryId: 'cat_sal',
+          paymentMethod: 'cash',
+          account: 'Efectivo',
+          date: today,
+          time: '09:00',
+          color: '#2ecc71',
+          icon: 'Cash'
+        }
+      ],
+      [creditCard, debitCard],
+      [],
+      undefined,
+      [],
+      [
+        { id: 'g1', name: 'Meta Vacaciones', targetAmount: 5000, currentAmount: 1000, icon: 'Plane', color: '#6366f1', targetDate: '2026-12-31' }
+      ]
+    );
+
+    it('correctly tracks goalsFrozenBalance and unallocatedLiquidCash without affecting liabilities', () => {
+      // availableLiquidCash = cash (2,500) + debit (20,000) = 22,500
+      expect(mockSummary.availableLiquidCash).toBe(22500);
+      // goalsFrozenBalance = 1,000
+      expect(mockSummary.goalsFrozenBalance).toBe(1000);
+      // unallocatedLiquidCash = 22,500 - 1,000 = 21,500
+      expect(mockSummary.unallocatedLiquidCash).toBe(21500);
+      // Credit card debt is completely decoupled and unchanged
+      expect(mockSummary.totalCreditCardDebt).toBe(10000);
+    });
+
+    it('validates Cash transactions: passes when sufficient, fails with shortfall & alternative cards when exceeded', () => {
+      // Available cash: 2,500
+      const passResult = FinancialEngine.validateTransaction(1500, 'cash', undefined, mockSummary, [creditCard, debitCard]);
+      expect(passResult.isValid).toBe(true);
+
+      const failResult = FinancialEngine.validateTransaction(4000, 'cash', undefined, mockSummary, [creditCard, debitCard]);
+      expect(failResult.isValid).toBe(false);
+      expect(failResult.errorTitle).toBe('Saldo Insuficiente en Efectivo');
+      expect(failResult.shortfallAmount).toBe(1500); // 4000 - 2500
+      expect(failResult.suggestedCards?.length).toBeGreaterThan(0);
+      // Both creditCard (available 40,000) and debitCard (available 20,000) can cover 4,000
+      expect(failResult.suggestedCards?.some(c => c.id === creditCard.id)).toBe(true);
+      expect(failResult.suggestedCards?.some(c => c.id === debitCard.id)).toBe(true);
+    });
+
+    it('validates Credit Card transactions: verifies available credit limit', () => {
+      // Visa Platinum: creditLimit 50,000, balanceUsed 10,000 -> available credit 40,000
+      const passResult = FinancialEngine.validateTransaction(30000, 'card', creditCard, mockSummary, [creditCard, debitCard]);
+      expect(passResult.isValid).toBe(true);
+
+      // Exceeds available credit: 45,000 > 40,000 -> shortfall 5,000
+      const failResult = FinancialEngine.validateTransaction(45000, 'card', creditCard, mockSummary, [creditCard, debitCard]);
+      expect(failResult.isValid).toBe(false);
+      expect(failResult.errorTitle).toBe('Cupo de Crédito Excedido');
+      expect(failResult.shortfallAmount).toBe(5000);
+    });
+
+    it('validates Debit Card transactions: verifies available balance and overdraft', () => {
+      // Cuenta Nómina: balance 20,000, no overdraft
+      const passResult = FinancialEngine.validateTransaction(12000, 'card', debitCard, mockSummary, [creditCard, debitCard]);
+      expect(passResult.isValid).toBe(true);
+
+      // Exceeds balance: 25,000 > 20,000 -> shortfall 5,000, suggests Visa Platinum (available 40,000)
+      const failResult = FinancialEngine.validateTransaction(25000, 'card', debitCard, mockSummary, [creditCard, debitCard]);
+      expect(failResult.isValid).toBe(false);
+      expect(failResult.errorTitle).toBe('Saldo Insuficiente en Tarjeta');
+      expect(failResult.shortfallAmount).toBe(5000);
+      expect(failResult.suggestedCards?.some(c => c.id === creditCard.id)).toBe(true);
+    });
+
+    it('validates Investment allocations with investment-specific guidance', () => {
+      const invFail = FinancialEngine.validateInvestmentAllocation(5000, 'cash', undefined, mockSummary, [creditCard, debitCard]);
+      expect(invFail.isValid).toBe(false);
+      expect(invFail.errorTitle).toBe('Fondos Insuficientes para Inversión');
+      expect(invFail.errorMessage).toContain('Puedes cambiar de medio de pago');
+    });
+
+    it('calculates debt payment impact and preserves linked credit card ID', () => {
+      const cardDebt: Debt = {
+        id: 'debt_cc_1',
+        personOrInstitution: 'Visa Platinum Consumo',
+        amount: 10000,
+        remainingAmount: 10000,
+        type: 'borrowed',
+        linkedCardId: creditCard.id
+      };
+
+      // Partial payment of 4,000
+      const partialImpact = FinancialEngine.calculateDebtPaymentImpact(cardDebt, 4000);
+      expect(partialImpact.newRemaining).toBe(6000);
+      expect(partialImpact.isFullyPaid).toBe(false);
+      expect(partialImpact.linkedCardId).toBe(creditCard.id);
+
+      // Full liquidation of 10,000
+      const fullImpact = FinancialEngine.calculateDebtPaymentImpact(cardDebt, 10000);
+      expect(fullImpact.newRemaining).toBe(0);
+      expect(fullImpact.isFullyPaid).toBe(true);
+      expect(fullImpact.linkedCardId).toBe(creditCard.id);
+    });
   });
 });

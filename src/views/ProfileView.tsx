@@ -1099,15 +1099,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
               </div>
 
               <div className="input-group" style={{ flex: 1 }}>
-                <label className="input-label">Cuenta</label>
+                <label className="input-label">Medio de Pago</label>
                 <select
                   value={recAccount}
                   onChange={(e) => setRecAccount(e.target.value)}
                   className="input-field"
                 >
                   <option value="Efectivo">Efectivo</option>
-                  <option value="Tarjeta">Tarjeta</option>
-                  <option value="Banco">Banco</option>
+                  {cards.map(c => (
+                    <option key={c.id} value={c.name}>{c.name} ({c.type === 'credit' ? 'Crédito' : 'Débito'})</option>
+                  ))}
                 </select>
               </div>
             </div>

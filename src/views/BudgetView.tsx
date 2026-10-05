@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { DynamicIcon } from '../components/DynamicIcon';
-import { Budget, SavingGoal, Debt } from '../models/types';
+import { Budget, SavingGoal, Debt, PaymentMethod } from '../models/types';
+import { FinancialEngine } from '../services/FinancialEngine';
+import { StatsService } from '../services/StatsService';
 
 export const BudgetView: React.FC = () => {
   const {
@@ -91,7 +93,8 @@ export const BudgetView: React.FC = () => {
   const [showAddInvestmentMove, setShowAddInvestmentMove] = useState<boolean>(false);
   const [invMoveType, setInvMoveType] = useState<'deposit' | 'yield' | 'withdrawal'>('deposit');
   const [invAmount, setInvAmount] = useState<string>('');
-  const [invLiquidAccount, setInvLiquidAccount] = useState<string>('Tarjeta');
+  const [invSourceMethod, setInvSourceMethod] = useState<PaymentMethod>('cash');
+  const [invCardId, setInvCardId] = useState<string>('');
   const [invNotes, setInvNotes] = useState<string>('');
   const [invDate, setInvDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
@@ -129,12 +132,15 @@ export const BudgetView: React.FC = () => {
         setDebtAmount('');
         setDebtDueDate('');
         setDebtNotes('');
+        setDebtLinkedCardId('');
         setShowAddDebt(false);
       }
       if (showAddInvestmentMove) {
         setInvAmount('');
         setInvNotes('');
         setInvMoveType('deposit');
+        setInvSourceMethod('cash');
+        setInvCardId('');
         setShowAddInvestmentMove(false);
       }
     };
@@ -169,12 +175,16 @@ export const BudgetView: React.FC = () => {
     }
   }, [showAddDebt]);
 
+  // Decoupled Financial Summary & Active Cards
+  const summary = StatsService.getSummary(transactions, budgets, cards, undefined, debts, goals);
+  const activeCards = cards.filter(c => c.isActive);
+
   // Account Picker state
   const [showAccountPicker, setShowAccountPicker] = useState<boolean>(false);
   const [accountPickerTitle, setAccountPickerTitle] = useState<string>('');
-  const [accountPickerCallback, setAccountPickerCallback] = useState<((acc: string) => void) | null>(null);
+  const [accountPickerCallback, setAccountPickerCallback] = useState<((acc: string, cardId?: string, method?: PaymentMethod) => void) | null>(null);
 
-  const promptAccountSelection = (title: string, callback: (acc: string) => void) => {
+  const promptAccountSelection = (title: string, callback: (acc: string, cardId?: string, method?: PaymentMethod) => void) => {
     setAccountPickerTitle(title);
     setAccountPickerCallback(() => callback);
     setShowAccountPicker(true);
@@ -186,7 +196,36 @@ export const BudgetView: React.FC = () => {
   const [quickExpenseAmount, setQuickExpenseAmount] = useState<string>('');
   const [quickExpenseNotes, setQuickExpenseNotes] = useState<string>('');
   const [quickExpenseIsEmergency, setQuickExpenseIsEmergency] = useState<boolean>(false);
-  const [quickExpenseAccount, setQuickExpenseAccount] = useState<string>('Tarjeta');
+  const [quickExpenseMethod, setQuickExpenseMethod] = useState<PaymentMethod>('card');
+  const [quickExpenseCardId, setQuickExpenseCardId] = useState<string>('');
+
+  // Real-time quick expense validation
+  const quickAmountNum = parseFloat(quickExpenseAmount) || 0;
+  const quickSelectedCard = quickExpenseMethod === 'card'
+    ? (activeCards.find(c => c.id === quickExpenseCardId) || activeCards[0])
+    : undefined;
+  const quickValidation = FinancialEngine.validateTransaction(
+    quickAmountNum,
+    quickExpenseMethod,
+    quickSelectedCard,
+    summary,
+    activeCards
+  );
+
+  // Real-time investment allocation validation
+  const invAmountNum = parseFloat(invAmount) || 0;
+  const invSelectedCard = invSourceMethod === 'card'
+    ? (activeCards.find(c => c.id === invCardId) || activeCards[0])
+    : undefined;
+  const invValidation = invMoveType === 'deposit'
+    ? FinancialEngine.validateInvestmentAllocation(
+        invAmountNum,
+        invSourceMethod,
+        invSelectedCard,
+        summary,
+        activeCards
+      )
+    : { isValid: true };
 
   // Inline Category Creation State
   const [showInlineAddCategory, setShowInlineAddCategory] = useState<boolean>(false);
@@ -217,6 +256,7 @@ export const BudgetView: React.FC = () => {
   const [debtType, setDebtType] = useState<'lent' | 'borrowed'>('borrowed');
   const [debtDueDate, setDebtDueDate] = useState<string>('');
   const [debtNotes, setDebtNotes] = useState<string>('');
+  const [debtLinkedCardId, setDebtLinkedCardId] = useState<string>('');
 
 
 
@@ -365,7 +405,8 @@ export const BudgetView: React.FC = () => {
     setQuickExpenseAmount('');
     setQuickExpenseNotes('');
     setQuickExpenseIsEmergency(false);
-    setQuickExpenseAccount('Tarjeta');
+    setQuickExpenseMethod(activeCards.length > 0 ? 'card' : 'cash');
+    setQuickExpenseCardId(activeCards[0]?.id || '');
     setShowQuickExpenseModal(true);
   };
 
@@ -383,6 +424,11 @@ export const BudgetView: React.FC = () => {
       return;
     }
 
+    if (!quickValidation.isValid) {
+      alert(`${quickValidation.errorTitle}: ${quickValidation.errorMessage}`);
+      return;
+    }
+
     const now = new Date();
     let categoryId = quickExpenseBudget.categoryId || 'cat_extra';
     let noteText = quickExpenseNotes.trim();
@@ -395,22 +441,14 @@ export const BudgetView: React.FC = () => {
 
     const catObj = categories.find(c => c.id === categoryId);
 
-    const activeCards = cards.filter(c => c.isActive);
-    const lastCardId = localStorage.getItem('finanlist_last_card_id');
-    const defaultCard = (lastCardId && activeCards.find(c => c.id === lastCardId)) || activeCards[0];
-
-    let resolvedCardId: string | undefined = undefined;
-    let resolvedAccount = quickExpenseAccount;
-
-    if (quickExpenseAccount === 'Tarjeta' && defaultCard) {
-      resolvedCardId = defaultCard.id;
-      resolvedAccount = defaultCard.name;
-    }
+    const resolvedCardId = quickExpenseMethod === 'card' ? quickSelectedCard?.id : undefined;
+    const resolvedAccount = quickExpenseMethod === 'card' ? (quickSelectedCard?.name || 'Tarjeta') : 'Efectivo';
 
     addTransaction({
       amount,
       type: 'expense',
       categoryId,
+      paymentMethod: quickExpenseMethod,
       account: resolvedAccount,
       cardId: resolvedCardId,
       date: now.toISOString().split('T')[0],
@@ -491,21 +529,28 @@ export const BudgetView: React.FC = () => {
       return;
     }
 
-    const accountOption = prompt(`¿De qué cuenta deseas aportar?\nEscribe: Efectivo, Tarjeta o Banco`, 'Banco');
-    if (accountOption === null) return; // User cancelled
-    const account = accountOption.trim() || 'Banco';
+    promptAccountSelection(`Origen de fondos para "${goal.name}"`, (account, cardId, paymentMethod) => {
+      const selectedCard = cardId ? cards.find(c => c.id === cardId) : undefined;
+      const validation = FinancialEngine.validateTransaction(amount, paymentMethod || 'cash', selectedCard, summary, activeCards);
+      if (!validation.isValid) {
+        alert(`${validation.errorTitle}: ${validation.errorMessage}`);
+        return;
+      }
 
-    const now = new Date();
-    addTransaction({
-      amount,
-      type: 'expense',
-      categoryId: 'cat_saving', // Category Ahorro
-      account,
-      date: now.toISOString().split('T')[0],
-      time: now.toTimeString().split(' ')[0].slice(0, 5),
-      notes: `Aporte a meta: ${goal.name} #goal:${goal.id}`,
-      color: goal.color,
-      icon: goal.icon
+      const now = new Date();
+      addTransaction({
+        amount,
+        type: 'expense',
+        categoryId: 'cat_saving', // Category Ahorro
+        paymentMethod: paymentMethod || (cardId ? 'card' : 'cash'),
+        account,
+        cardId,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        notes: `Aporte a meta: ${goal.name} #goal:${goal.id}`,
+        color: goal.color,
+        icon: goal.icon
+      });
     });
   };
 
@@ -572,15 +617,24 @@ export const BudgetView: React.FC = () => {
       return;
     }
 
+    if (invMoveType === 'deposit' && !invValidation.isValid) {
+      alert(`${invValidation.errorTitle}: ${invValidation.errorMessage}`);
+      return;
+    }
+
     const baseNotes = invNotes.trim();
+    const resolvedCardId = invSourceMethod === 'card' ? invSelectedCard?.id : undefined;
+    const resolvedAccount = invSourceMethod === 'card' ? (invSelectedCard?.name || 'Tarjeta') : 'Efectivo';
 
     if (invMoveType === 'deposit') {
-      // Double entry: expense on liquid account, income on Inversiones account
+      // 1. Double entry: expense on liquid origin (cash or specific card)
       addTransaction({
         amount: amt,
         type: 'expense',
         categoryId: 'cat_inv',
-        account: invLiquidAccount,
+        paymentMethod: invSourceMethod,
+        account: resolvedAccount,
+        cardId: resolvedCardId,
         date: invDate,
         time: new Date().toTimeString().split(' ')[0].slice(0, 5),
         notes: baseNotes || 'Aportación a Inversiones',
@@ -590,6 +644,7 @@ export const BudgetView: React.FC = () => {
         icon: 'TrendingUp'
       });
 
+      // 2. Income on Inversiones portfolio
       addTransaction({
         amount: amt,
         type: 'income',
@@ -619,12 +674,14 @@ export const BudgetView: React.FC = () => {
         icon: 'TrendingUp'
       });
     } else if (invMoveType === 'withdrawal') {
-      // Double entry: income on liquid account, expense on Inversiones account
+      // Double entry: income on liquid destination, expense on Inversiones account
       addTransaction({
         amount: amt,
         type: 'income',
         categoryId: 'cat_inv',
-        account: invLiquidAccount,
+        paymentMethod: invSourceMethod,
+        account: resolvedAccount,
+        cardId: resolvedCardId,
         date: invDate,
         time: new Date().toTimeString().split(' ')[0].slice(0, 5),
         notes: baseNotes ? `[Retiro] ${baseNotes}` : 'Retiro de Inversiones',
@@ -653,6 +710,8 @@ export const BudgetView: React.FC = () => {
     setInvAmount('');
     setInvNotes('');
     setInvMoveType('deposit');
+    setInvSourceMethod('cash');
+    setInvCardId('');
     setInvDate(new Date().toISOString().split('T')[0]);
     setShowAddInvestmentMove(false);
     if (window.history.state?.modal === 'investment') {
@@ -679,12 +738,13 @@ export const BudgetView: React.FC = () => {
         remainingAmount: total,
         type: debtType,
         dueDate: debtDueDate || undefined,
-        notes: debtNotes.trim() || undefined
+        notes: debtNotes.trim() || undefined,
+        linkedCardId: debtLinkedCardId || undefined
       });
       handleCloseDebtModal();
     } else {
       // Me Deben (Lent): Registers an initial expense transaction since cash left our wallet
-      promptAccountSelection(`Cuenta para registrar la salida de dinero`, (account) => {
+      promptAccountSelection(`Cuenta para registrar la salida de dinero`, (account, cardId, paymentMethod) => {
         addDebt({
           personOrInstitution: debtPerson.trim(),
           amount: total,
@@ -699,7 +759,9 @@ export const BudgetView: React.FC = () => {
           amount: total,
           type: 'expense',
           categoryId: 'cat_saving',
+          paymentMethod: paymentMethod || (cardId ? 'card' : 'cash'),
           account,
+          cardId,
           date: now.toISOString().split('T')[0],
           time: now.toTimeString().split(' ')[0].slice(0, 5),
           notes: `Préstamo realizado a: ${debtPerson.trim()}`,
@@ -721,9 +783,9 @@ export const BudgetView: React.FC = () => {
       return;
     }
 
-    promptAccountSelection(`Cuenta para realizar el abono`, (account) => {
-      const newRemaining = Math.max(0, debt.remainingAmount - amount);
-      if (newRemaining === 0) {
+    promptAccountSelection(`Cuenta para realizar el abono`, (account, cardId, paymentMethod) => {
+      const { newRemaining, isFullyPaid, linkedCardId } = FinancialEngine.calculateDebtPaymentImpact(debt, amount);
+      if (isFullyPaid) {
         deleteDebt(debt.id);
         alert('🎉 ¡Deuda totalmente saldada y eliminada!');
       } else {
@@ -734,11 +796,16 @@ export const BudgetView: React.FC = () => {
       }
 
       const now = new Date();
+      // Si la deuda está vinculada a una tarjeta de crédito, registrar como tipo 'payment' con destinationCardId para liberar el cupo sin duplicar transacciones
+      const isLinkedCard = !!linkedCardId;
       addTransaction({
         amount,
-        type: debt.type === 'borrowed' ? 'expense' : 'income',
+        type: isLinkedCard ? 'payment' : (debt.type === 'borrowed' ? 'expense' : 'income'),
+        destinationCardId: isLinkedCard ? linkedCardId : undefined,
         categoryId: debt.type === 'borrowed' ? 'cat_bills' : 'cat_extra',
+        paymentMethod: paymentMethod || (cardId ? 'card' : 'cash'),
         account,
+        cardId,
         date: now.toISOString().split('T')[0],
         time: now.toTimeString().split(' ')[0].slice(0, 5),
         notes: `${debt.type === 'borrowed' ? 'Abono a deuda' : 'Cobro de préstamo'}: ${debt.personOrInstitution}`,
@@ -758,13 +825,17 @@ export const BudgetView: React.FC = () => {
     const confirmPay = confirm(`¿Estás seguro de que deseas liquidar esta deuda de ${profile.currency}${debt.remainingAmount.toLocaleString()}?`);
     if (!confirmPay) return;
     
-    promptAccountSelection(`¿Con qué cuenta deseas pagar?`, (account) => {
+    promptAccountSelection(`¿Con qué medio deseas pagar?`, (account, cardId, paymentMethod) => {
       const now = new Date();
+      const isLinkedCard = !!debt.linkedCardId;
       addTransaction({
         amount: debt.remainingAmount,
-        type: 'expense',
+        type: isLinkedCard ? 'payment' : 'expense',
+        destinationCardId: isLinkedCard ? debt.linkedCardId : undefined,
         categoryId: 'cat_extra',
+        paymentMethod: paymentMethod || (cardId ? 'card' : 'cash'),
         account,
+        cardId,
         date: now.toISOString().split('T')[0],
         time: now.toTimeString().split(' ')[0].slice(0, 5),
         notes: `Liquidación de deuda con ${debt.personOrInstitution}`,
@@ -1450,9 +1521,9 @@ export const BudgetView: React.FC = () => {
               <span>¿Cómo funciona el registro de Inversiones?</span>
             </div>
             <ul style={{ margin: 0, paddingLeft: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <li><b>Aportar Capital:</b> Registra un Gasto desde tu cuenta líquida (ej: Banco) con categoría <i>Inversiones</i>. Esto reduce tu saldo líquido general.</li>
+              <li><b>Aportar Capital:</b> Registra un Gasto desde tu liquidez disponible (ej: Efectivo o Tarjeta) con categoría <i>Inversiones</i>. Esto reduce tu saldo líquido general.</li>
               <li><b>Registrar Ganancia/Rendimiento:</b> Registra un Ingreso con cuenta <i>Inversiones</i> y categoría <i>Inversiones</i>. Esto aumenta el valor de tu inversión sin afectar tu saldo líquido de Inicio.</li>
-              <li><b>Retirar Fondos:</b> Registra un Ingreso en tu cuenta líquida (ej: Banco) y un Gasto de igual monto en la cuenta <i>Inversiones</i>.</li>
+              <li><b>Retirar Fondos:</b> Registra un Ingreso en tu cuenta líquida (ej: Efectivo o Tarjeta) y un Gasto de igual monto en la cuenta <i>Inversiones</i>.</li>
             </ul>
           </div>
 
@@ -1571,7 +1642,7 @@ export const BudgetView: React.FC = () => {
               <label className="input-label">Persona / Institución</label>
               <input
                 type="text"
-                placeholder="Ej. Banco Popular, Juan Pérez"
+                placeholder="Ej. Juan Pérez, Préstamo de Auto, Hipoteca"
                 value={debtPerson}
                 onChange={(e) => setDebtPerson(e.target.value)}
                 className="input-field"
@@ -1579,7 +1650,7 @@ export const BudgetView: React.FC = () => {
             </div>
 
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px', marginTop: '-8px' }}>
-              {['💳 Tarjeta de Crédito', '🏢 Banco (Préstamo)', '👥 Préstamo Familiar', '🤝 Amigo'].map(sug => (
+              {['💳 Tarjeta de Crédito', '🏢 Entidad Financiera', '👥 Préstamo Familiar', '🤝 Amigo'].map(sug => (
                 <button
                   key={sug}
                   type="button"
@@ -1599,6 +1670,26 @@ export const BudgetView: React.FC = () => {
               ))}
             </div>
 
+            {debtType === 'borrowed' && (
+              <div className="input-group">
+                <label className="input-label">Vincular a Tarjeta de Crédito (Opcional)</label>
+                <select
+                  value={debtLinkedCardId}
+                  onChange={(e) => setDebtLinkedCardId(e.target.value)}
+                  className="input-field"
+                >
+                  <option value="">Ninguna (Deuda Externa / Persona)</option>
+                  {cards.filter(c => c.type === 'credit' && c.isActive).map(c => (
+                    <option key={c.id} value={c.id}>
+                      💳 {c.name} ({c.bank}) - Cupo usado: {profile.currency}{(c.balanceUsed || 0).toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '4px', display: 'block' }}>
+                  Al abonar o liquidar esta deuda, se liberará automáticamente el cupo de la tarjeta vinculada sin generar duplicados.
+                </span>
+              </div>
+            )}
 
             <div className="input-group">
               <label className="input-label">Monto Total</label>
@@ -1963,7 +2054,7 @@ export const BudgetView: React.FC = () => {
       {/* --- CUSTOM ACCOUNT PICKER SHEET --- */}
       {showAccountPicker && (
         <div className="modal-overlay open" onClick={() => setShowAccountPicker(false)}>
-          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0 }}>{accountPickerTitle}</h3>
               <button className="btn-ghost" onClick={() => setShowAccountPicker(false)}>
@@ -1971,41 +2062,113 @@ export const BudgetView: React.FC = () => {
               </button>
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' }}>
-              {[
-                { name: 'Efectivo', icon: 'Banknote' },
-                { name: 'Tarjeta', icon: 'CreditCard' },
-                { name: 'Banco', icon: 'Building2' }
-              ].map(acc => (
-                <button
-                  key={acc.name}
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    if (accountPickerCallback) {
-                      accountPickerCallback(acc.name);
-                    }
-                    setShowAccountPicker(false);
-                  }}
-                  style={{
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px', maxHeight: '320px', overflowY: 'auto' }}>
+              {/* Option 1: Efectivo */}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  if (accountPickerCallback) {
+                    accountPickerCallback('Efectivo', undefined, 'cash');
+                  }
+                  setShowAccountPicker(false);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 14px',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-card)',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(34, 197, 94, 0.12)',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    padding: '14px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    borderRadius: '12px'
-                  }}
-                >
-                  <DynamicIcon 
-                    name={acc.icon} 
-                    size={18} 
-                    color="var(--color-primary)" 
-                  />
-                  <span>{acc.name}</span>
-                </button>
-              ))}
+                    justifyContent: 'center'
+                  }}>
+                    <DynamicIcon name="Banknote" size={18} color="var(--color-success)" />
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>Efectivo</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Caja y liquidez directa</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: summary.cashBalance > 0 ? 'var(--color-success)' : 'var(--text-secondary)' }}>
+                    {profile.currency}{summary.cashBalance.toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Disponible</div>
+                </div>
+              </button>
+
+              {/* Option 2: Active Cards */}
+              {activeCards.map(c => {
+                const isCredit = c.type === 'credit';
+                const capacity = isCredit
+                  ? Math.max(0, (c.creditLimit || 0) - (c.balanceUsed || 0))
+                  : ((c.currentBalance || 0) + (c.allowOverdraft ? (c.overdraftLimit || 0) : 0));
+                const capacityLabel = isCredit ? 'Cupo disponible' : 'Saldo disponible';
+
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      if (accountPickerCallback) {
+                        accountPickerCallback(c.name, c.id, 'card');
+                      }
+                      setShowAccountPicker(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-card)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        backgroundColor: `${c.color || 'var(--color-primary)'}20`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <DynamicIcon name="CreditCard" size={18} color={c.color || 'var(--color-primary)'} />
+                      </div>
+                      <div style={{ textAlign: 'left' }}>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                          {c.name} {c.lastFourDigits ? `(••${c.lastFourDigits})` : ''}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          {c.bank} • <span style={{ textTransform: 'capitalize' }}>{isCredit ? 'Crédito' : 'Débito'}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                        {profile.currency}{capacity.toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{capacityLabel}</div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -2089,45 +2252,191 @@ export const BudgetView: React.FC = () => {
               </div>
             ) : null}
 
-            {/* Account Selector segmented cards */}
+            {/* Payment Method Selector */}
             <div className="input-group">
-              <label className="input-label">Cuenta de Pago</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '4px' }}>
-                {[
-                  { name: 'Efectivo', icon: 'Banknote' },
-                  { name: 'Tarjeta', icon: 'CreditCard' },
-                  { name: 'Banco', icon: 'Building2' }
-                ].map(acc => (
-                  <button
-                    key={acc.name}
-                    type="button"
-                    onClick={() => setQuickExpenseAccount(acc.name)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '12px',
-                      borderRadius: '12px',
-                      border: '1px solid',
-                      borderColor: quickExpenseAccount === acc.name ? 'var(--color-primary)' : 'var(--border-color)',
-                      backgroundColor: quickExpenseAccount === acc.name ? 'var(--color-primary-light)' : 'var(--bg-input)',
-                      color: quickExpenseAccount === acc.name ? 'var(--color-primary)' : 'var(--text-primary)',
-                      fontWeight: '600',
-                      fontSize: '12px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <DynamicIcon 
-                      name={acc.icon} 
-                      size={16} 
-                      color={quickExpenseAccount === acc.name ? 'var(--color-primary)' : 'var(--text-secondary)'} 
-                    />
-                    <span>{acc.name}</span>
-                  </button>
-                ))}
+              <label className="input-label">Método de Pago</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setQuickExpenseMethod('cash')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '12px',
+                    borderRadius: '12px',
+                    border: '1px solid',
+                    borderColor: quickExpenseMethod === 'cash' ? 'var(--color-primary)' : 'var(--border-color)',
+                    backgroundColor: quickExpenseMethod === 'cash' ? 'var(--color-primary-light)' : 'var(--bg-input)',
+                    color: quickExpenseMethod === 'cash' ? 'var(--color-primary)' : 'var(--text-primary)',
+                    fontWeight: '700',
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <DynamicIcon name="Banknote" size={16} color={quickExpenseMethod === 'cash' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
+                  <span>Efectivo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuickExpenseMethod('card')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '12px',
+                    borderRadius: '12px',
+                    border: '1px solid',
+                    borderColor: quickExpenseMethod === 'card' ? 'var(--color-primary)' : 'var(--border-color)',
+                    backgroundColor: quickExpenseMethod === 'card' ? 'var(--color-primary-light)' : 'var(--bg-input)',
+                    color: quickExpenseMethod === 'card' ? 'var(--color-primary)' : 'var(--text-primary)',
+                    fontWeight: '700',
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <DynamicIcon name="CreditCard" size={16} color={quickExpenseMethod === 'card' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
+                  <span>Tarjeta</span>
+                </button>
               </div>
             </div>
+
+            {/* If Cash: display current cash balance */}
+            {quickExpenseMethod === 'cash' && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 14px',
+                borderRadius: '12px',
+                backgroundColor: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
+                fontSize: '12px'
+              }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Saldo en Efectivo disponible:</span>
+                <span style={{ fontWeight: '700', color: summary.cashBalance > 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                  {profile.currency}{summary.cashBalance.toLocaleString()}
+                </span>
+              </div>
+            )}
+
+            {/* If Card: dynamic card selector with limits */}
+            {quickExpenseMethod === 'card' && (
+              <div className="input-group">
+                <label className="input-label">Seleccionar Tarjeta</label>
+                {activeCards.length === 0 ? (
+                  <div style={{ padding: '12px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-danger)', borderRadius: '12px', fontSize: '12px' }}>
+                    No tienes tarjetas activas registradas. Selecciona Efectivo o registra una tarjeta en la pestaña de Tarjetas.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                    {activeCards.map(c => {
+                      const isSelected = quickExpenseCardId === c.id || (!quickExpenseCardId && c.id === activeCards[0].id);
+                      const isCredit = c.type === 'credit';
+                      const capacity = isCredit 
+                        ? Math.max(0, (c.creditLimit || 0) - (c.balanceUsed || 0))
+                        : ((c.currentBalance || 0) + (c.allowOverdraft ? (c.overdraftLimit || 0) : 0));
+                      const capacityLabel = isCredit ? 'Cupo disponible' : 'Saldo disponible';
+
+                      return (
+                        <div
+                          key={c.id}
+                          onClick={() => setQuickExpenseCardId(c.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 12px',
+                            borderRadius: '12px',
+                            border: '1px solid',
+                            borderColor: isSelected ? 'var(--color-primary)' : 'var(--border-color)',
+                            backgroundColor: isSelected ? 'var(--color-primary-light)' : 'var(--bg-card)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: c.color || 'var(--color-primary)' }} />
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                {c.name} {c.lastFourDigits ? `(••${c.lastFourDigits})` : ''}
+                              </div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                {c.bank} • <span style={{ textTransform: 'capitalize' }}>{c.type === 'credit' ? 'Crédito' : 'Débito'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '800', color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)' }}>
+                              {profile.currency}{capacity.toLocaleString()}
+                            </div>
+                            <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                              {capacityLabel}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Inline validation error & alternative card recommendations */}
+            {!quickValidation.isValid && (
+              <div style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: '12px',
+                padding: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-danger)', fontWeight: '700', fontSize: '12px' }}>
+                  <DynamicIcon name="AlertTriangle" size={16} />
+                  <span>{quickValidation.errorTitle}</span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                  {quickValidation.errorMessage}
+                </div>
+
+                {quickValidation.suggestedCards && quickValidation.suggestedCards.length > 0 && (
+                  <div style={{ marginTop: '4px', borderTop: '1px solid rgba(239, 68, 68, 0.2)', paddingTop: '6px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                      Tarjetas con capacidad suficiente:
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {quickValidation.suggestedCards.map(sug => (
+                        <button
+                          key={sug.id}
+                          type="button"
+                          onClick={() => {
+                            setQuickExpenseMethod('card');
+                            setQuickExpenseCardId(sug.id);
+                          }}
+                          style={{
+                            fontSize: '11px',
+                            padding: '4px 8px',
+                            borderRadius: '8px',
+                            backgroundColor: 'var(--bg-card)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--color-primary)',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          👉 Usar {sug.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Action buttons */}
             <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
@@ -2142,8 +2451,13 @@ export const BudgetView: React.FC = () => {
               <button 
                 type="button" 
                 className="btn btn-primary" 
+                disabled={!quickValidation.isValid}
                 onClick={handleSaveQuickExpense}
-                style={{ flex: 1 }}
+                style={{ 
+                  flex: 1,
+                  opacity: !quickValidation.isValid ? 0.5 : 1,
+                  cursor: !quickValidation.isValid ? 'not-allowed' : 'pointer'
+                }}
               >
                 Registrar Gasto
               </button>
@@ -2224,43 +2538,188 @@ export const BudgetView: React.FC = () => {
             {invMoveType !== 'yield' && (
               <div className="input-group">
                 <label className="input-label">
-                  {invMoveType === 'deposit' ? 'Cuenta Origen (Se descuenta de aquí)' : 'Cuenta Destino (Se abona aquí)'}
+                  {invMoveType === 'deposit' ? 'Origen de Fondos (Se descuenta de aquí)' : 'Destino de Fondos (Se abona aquí)'}
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '4px' }}>
-                  {[
-                    { name: 'Efectivo', icon: 'Banknote' },
-                    { name: 'Tarjeta', icon: 'CreditCard' },
-                    { name: 'Banco', icon: 'Building2' }
-                  ].map(acc => (
-                    <button
-                      key={acc.name}
-                      type="button"
-                      onClick={() => setInvLiquidAccount(acc.name)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '10px 8px',
-                        borderRadius: '12px',
-                        border: '1px solid',
-                        borderColor: invLiquidAccount === acc.name ? 'var(--color-primary)' : 'var(--border-color)',
-                        backgroundColor: invLiquidAccount === acc.name ? 'var(--color-primary-light)' : 'var(--bg-card)',
-                        color: invLiquidAccount === acc.name ? 'var(--color-primary)' : 'var(--text-primary)',
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        fontWeight: invLiquidAccount === acc.name ? '700' : '500',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <DynamicIcon 
-                        name={acc.icon} 
-                        size={14} 
-                        color={invLiquidAccount === acc.name ? 'var(--color-primary)' : 'var(--text-secondary)'} 
-                      />
-                      <span>{acc.name}</span>
-                    </button>
-                  ))}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '4px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setInvSourceMethod('cash')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      padding: '10px',
+                      borderRadius: '12px',
+                      border: '1px solid',
+                      borderColor: invSourceMethod === 'cash' ? 'var(--color-primary)' : 'var(--border-color)',
+                      backgroundColor: invSourceMethod === 'cash' ? 'var(--color-primary-light)' : 'var(--bg-input)',
+                      color: invSourceMethod === 'cash' ? 'var(--color-primary)' : 'var(--text-primary)',
+                      fontWeight: '700',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <DynamicIcon name="Banknote" size={16} color={invSourceMethod === 'cash' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
+                    <span>Efectivo</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInvSourceMethod('card')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      padding: '10px',
+                      borderRadius: '12px',
+                      border: '1px solid',
+                      borderColor: invSourceMethod === 'card' ? 'var(--color-primary)' : 'var(--border-color)',
+                      backgroundColor: invSourceMethod === 'card' ? 'var(--color-primary-light)' : 'var(--bg-input)',
+                      color: invSourceMethod === 'card' ? 'var(--color-primary)' : 'var(--text-primary)',
+                      fontWeight: '700',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <DynamicIcon name="CreditCard" size={16} color={invSourceMethod === 'card' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
+                    <span>Tarjeta</span>
+                  </button>
                 </div>
+              </div>
+            )}
+
+            {/* If Cash for investment */}
+            {invMoveType !== 'yield' && invSourceMethod === 'cash' && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 14px',
+                borderRadius: '12px',
+                backgroundColor: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
+                fontSize: '12px',
+                marginBottom: '12px'
+              }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Efectivo Disponible:</span>
+                <span style={{ fontWeight: '700', color: summary.cashBalance > 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                  {profile.currency}{summary.cashBalance.toLocaleString()}
+                </span>
+              </div>
+            )}
+
+            {/* If Card for investment */}
+            {invMoveType !== 'yield' && invSourceMethod === 'card' && (
+              <div className="input-group">
+                <label className="input-label">Seleccionar Tarjeta</label>
+                {activeCards.length === 0 ? (
+                  <div style={{ padding: '12px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-danger)', borderRadius: '12px', fontSize: '12px' }}>
+                    No tienes tarjetas activas registradas.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '150px', overflowY: 'auto' }}>
+                    {activeCards.map(c => {
+                      const isSelected = invCardId === c.id || (!invCardId && c.id === activeCards[0].id);
+                      const isCredit = c.type === 'credit';
+                      const capacity = isCredit 
+                        ? Math.max(0, (c.creditLimit || 0) - (c.balanceUsed || 0))
+                        : ((c.currentBalance || 0) + (c.allowOverdraft ? (c.overdraftLimit || 0) : 0));
+
+                      return (
+                        <div
+                          key={c.id}
+                          onClick={() => setInvCardId(c.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 12px',
+                            borderRadius: '12px',
+                            border: '1px solid',
+                            borderColor: isSelected ? 'var(--color-primary)' : 'var(--border-color)',
+                            backgroundColor: isSelected ? 'var(--color-primary-light)' : 'var(--bg-card)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: c.color || 'var(--color-primary)' }} />
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                {c.name} {c.lastFourDigits ? `(••${c.lastFourDigits})` : ''}
+                              </div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                {c.bank} • {c.type === 'credit' ? 'Crédito' : 'Débito'}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '800', color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)' }}>
+                              {profile.currency}{capacity.toLocaleString()}
+                            </div>
+                            <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                              {isCredit ? 'Cupo' : 'Saldo'}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Validation Banner for Investment Deposit */}
+            {invMoveType === 'deposit' && !invValidation.isValid && (
+              <div style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: '12px',
+                padding: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-danger)', fontWeight: '700', fontSize: '12px' }}>
+                  <DynamicIcon name="AlertTriangle" size={16} />
+                  <span>{invValidation.errorTitle}</span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                  {invValidation.errorMessage}
+                </div>
+
+                {invValidation.suggestedCards && invValidation.suggestedCards.length > 0 && (
+                  <div style={{ marginTop: '4px', borderTop: '1px solid rgba(239, 68, 68, 0.2)', paddingTop: '6px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                      Tarjetas con capacidad suficiente:
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {invValidation.suggestedCards.map(sug => (
+                        <button
+                          key={sug.id}
+                          type="button"
+                          onClick={() => {
+                            setInvSourceMethod('card');
+                            setInvCardId(sug.id);
+                          }}
+                          style={{
+                            fontSize: '11px',
+                            padding: '4px 8px',
+                            borderRadius: '8px',
+                            backgroundColor: 'var(--bg-card)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--color-primary)',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          👉 Usar {sug.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2304,8 +2763,13 @@ export const BudgetView: React.FC = () => {
               <button 
                 type="button" 
                 className="btn btn-primary" 
+                disabled={invMoveType === 'deposit' && !invValidation.isValid}
                 onClick={handleSaveInvestmentMove}
-                style={{ flex: 1 }}
+                style={{ 
+                  flex: 1,
+                  opacity: (invMoveType === 'deposit' && !invValidation.isValid) ? 0.5 : 1,
+                  cursor: (invMoveType === 'deposit' && !invValidation.isValid) ? 'not-allowed' : 'pointer'
+                }}
               >
                 Registrar Movimiento
               </button>

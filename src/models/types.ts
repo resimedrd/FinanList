@@ -48,22 +48,25 @@ export interface FinancialNotification {
   createdAt: string;
 }
 
+export type PaymentMethod = 'cash' | 'card';
+
 export interface Transaction {
   id: string;
   amount: number;
   type: 'income' | 'expense' | 'payment';
   categoryId: string;
   subcategoryId?: string;
-  account: string;      // e.g., "Efectivo", "Tarjeta", "Banco"
-  cardId?: string;      // Associated PaymentCard ID if paid with card
-  destinationCardId?: string; // For card payments: which credit card received the payment
-  date: string;         // YYYY-MM-DD
-  time: string;         // HH:MM
+  paymentMethod?: PaymentMethod; // 'cash' | 'card'
+  account: string;               // e.g. "Efectivo", or card name (e.g. "BHD Débito", "Visa Oro")
+  cardId?: string;               // Associated PaymentCard ID if paid with card
+  destinationCardId?: string;    // For card payments: which credit card received the payment
+  date: string;                  // YYYY-MM-DD
+  time: string;                  // HH:MM
   notes?: string;
   tags?: string[];
-  color: string;        // Cache category color for easy lookup
-  icon: string;         // Cache category icon
-  receiptPhoto?: string; // base64 string
+  color: string;                 // Cache category color for easy lookup
+  icon: string;                  // Cache category icon
+  receiptPhoto?: string;         // base64 string
   location?: {
     latitude?: number;
     longitude?: number;
@@ -77,20 +80,43 @@ export interface Budget {
   amount: number;
   contingencyAmount?: number; // Optional fund for emergency contingencies
   type: 'weekly' | 'monthly' | 'category';
-  categoryId?: string; // Required if type is 'category'
-  startDate: string;   // YYYY-MM-DD
-  endDate: string;     // YYYY-MM-DD
-  name?: string;       // Custom name for the budget
+  categoryId?: string;        // Required if type is 'category'
+  startDate: string;          // YYYY-MM-DD
+  endDate: string;            // YYYY-MM-DD
+  name?: string;              // Custom name for the budget
 }
 
 export interface SavingGoal {
   id: string;
   name: string;
   targetAmount: number;
-  currentAmount: number;
+  currentAmount: number;      // Amount allocated/frozen in this goal
   icon: string;
   color: string;
-  targetDate: string;  // YYYY-MM-DD
+  targetDate: string;         // YYYY-MM-DD
+}
+
+export interface InvestmentPosition {
+  id: string;
+  name: string;              // e.g. "S&P 500 ETF", "Fondo Mutuo Renta Fija", "Acciones Apple"
+  type?: 'etf' | 'stocks' | 'crypto' | 'real_estate' | 'fixed_income' | 'other';
+  amountInvested: number;    // Capital aportado total acumulado
+  currentValue: number;      // Valor actual estimado de mercado
+  yieldAmount?: number;      // Ganancia/Rendimiento acumulado
+  currency: string;
+  notes?: string;
+  updatedAt: string;
+}
+
+export interface InvestmentMove {
+  id: string;
+  investmentId?: string;
+  type: 'deposit' | 'yield' | 'withdrawal';
+  amount: number;
+  sourceType: PaymentMethod; // 'cash' | 'card'
+  cardId?: string;
+  date: string;              // YYYY-MM-DD
+  notes?: string;
 }
 
 export interface UserProfile {
@@ -107,7 +133,6 @@ export interface UserProfile {
   stealthModeEnabled?: boolean;
 }
 
-
 export interface FinancialSummary {
   totalBalance: number;
   availableCash: number;
@@ -115,6 +140,16 @@ export interface FinancialSummary {
   monthlyExpense: number;
   monthlySavings: number;
   budgetProgress: number; // 0 to 100
+  cashBalance?: number;
+  debitCardsBalance?: number;
+  goalsFrozenBalance?: number;
+  unallocatedLiquidCash?: number;
+  totalCreditAvailable?: number;
+  totalCreditLimit?: number;
+  totalCreditCardDebt?: number;
+  investmentsBalance?: number;
+  totalReceivables?: number;
+  totalOwedDebts?: number;
 }
 
 export interface RecurringTransaction {
@@ -123,6 +158,7 @@ export interface RecurringTransaction {
   type: 'income' | 'expense';
   categoryId: string;
   account: string;
+  cardId?: string;
   notes?: string;
   frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
   startDate: string;      // YYYY-MM-DD
@@ -138,7 +174,8 @@ export interface Debt {
   amount: number;
   remainingAmount: number;
   type: 'lent' | 'borrowed'; // 'lent' (me deben), 'borrowed' (yo debo)
-  dueDate?: string;     // YYYY-MM-DD
-  interestRate?: number; // %
+  dueDate?: string;          // YYYY-MM-DD
+  interestRate?: number;     // %
   notes?: string;
+  linkedCardId?: string;     // Optional: ID de tarjeta de crédito asociada (libera cupo al pagar)
 }

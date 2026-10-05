@@ -19,11 +19,13 @@ export class StatsService {
     budgets: Budget[],
     cards: PaymentCard[] = [],
     dateFilter?: (dateStr: string) => boolean,
-    debts: Debt[] = []
+    debts: Debt[] = [],
+    goals: any[] = []
   ): {
     totalBalance: number;
     availableCash: number;
     currentBalance: number;
+    availableLiquidCash: number;
     monthlyIncome: number;
     monthlyExpense: number;
     monthlySavings: number;
@@ -34,16 +36,20 @@ export class StatsService {
     totalCreditLimit: number;
     cashBalance: number;
     bankBalance: number;
+    debitCardsBalance: number;
+    goalsFrozenBalance: number;
+    unallocatedLiquidCash: number;
     investmentsBalance: number;
     totalReceivables: number;
     totalOwedDebts: number;
   } {
-    const summary = FinancialEngine.calculateSummary(transactions, cards, budgets, dateFilter, debts);
+    const summary = FinancialEngine.calculateSummary(transactions, cards, budgets, dateFilter, debts, goals);
 
     return {
       totalBalance: summary.availableLiquidCash,
       availableCash: summary.availableLiquidCash,
       currentBalance: summary.availableLiquidCash,
+      availableLiquidCash: summary.availableLiquidCash,
       monthlyIncome: summary.monthlyIncome,
       monthlyExpense: summary.monthlyExpense,
       monthlySavings: summary.monthlySavings,
@@ -54,6 +60,9 @@ export class StatsService {
       totalCreditLimit: summary.totalCreditLimit,
       cashBalance: summary.cashBalance,
       bankBalance: summary.bankBalance,
+      debitCardsBalance: summary.debitCardsBalance,
+      goalsFrozenBalance: summary.goalsFrozenBalance,
+      unallocatedLiquidCash: summary.unallocatedLiquidCash,
       investmentsBalance: summary.investmentsBalance,
       totalReceivables: summary.totalReceivables,
       totalOwedDebts: summary.totalOwedDebts

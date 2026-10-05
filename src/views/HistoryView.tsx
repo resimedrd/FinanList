@@ -8,7 +8,7 @@ interface HistoryViewProps {
 }
 
 export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal }) => {
-  const { transactions, categories, profile, deleteTransaction } = useApp();
+  const { transactions, categories, profile, deleteTransaction, cards } = useApp();
 
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -67,8 +67,10 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
     // Category match
     const matchesCategory = selectedCategory === 'all' || tx.categoryId === selectedCategory;
 
-    // Account match
-    const matchesAccount = selectedAccount === 'all' || tx.account === selectedAccount;
+    // Account match (Efectivo or registered card)
+    const matchesAccount = selectedAccount === 'all' || 
+      tx.account === selectedAccount ||
+      (selectedAccount === 'Efectivo' && (tx.paymentMethod === 'cash' || tx.account === 'Efectivo'));
 
     // Favorites match
     const matchesFavorites = !onlyFavorites || !!tx.favorite;
@@ -246,9 +248,9 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
           </div>
 
           <div style={styles.filterItem}>
-            <span style={styles.filterLabel}>Cuenta de Pago</span>
+            <span style={styles.filterLabel}>Medio de Pago</span>
             <div style={styles.filterOptions}>
-              {['all', 'Efectivo', 'Tarjeta', 'Banco'].map(a => (
+              {['all', 'Efectivo', ...cards.map(c => c.name)].map(a => (
                 <button
                   key={a}
                   onClick={() => setSelectedAccount(a)}
@@ -259,7 +261,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
                     color: selectedAccount === a ? 'var(--color-primary)' : 'var(--text-primary)',
                   }}
                 >
-                  {a === 'all' ? 'Todas' : a}
+                  {a === 'all' ? 'Todos' : a}
                 </button>
               ))}
             </div>

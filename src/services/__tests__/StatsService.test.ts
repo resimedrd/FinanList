@@ -12,7 +12,8 @@ describe('StatsService', () => {
       amount: 1000,
       type: 'income',
       categoryId: 'cat_sal',
-      account: 'Banco',
+      paymentMethod: 'cash',
+      account: 'Efectivo',
       date: today,
       time: '10:00',
       color: '#2ecc71',
@@ -23,7 +24,8 @@ describe('StatsService', () => {
       amount: 300,
       type: 'expense',
       categoryId: 'cat_food_super',
-      account: 'Banco',
+      paymentMethod: 'cash',
+      account: 'Efectivo',
       date: today,
       time: '12:00',
       color: '#ff4d4d',
@@ -32,9 +34,10 @@ describe('StatsService', () => {
     {
       id: 'tx_3',
       amount: 150,
-      type: 'payment', // Credit card payment
+      type: 'payment', // Credit card payment in cash
       categoryId: 'cat_bills',
-      account: 'Banco',
+      paymentMethod: 'cash',
+      account: 'Efectivo',
       date: today,
       time: '14:00',
       color: '#4f46e5',
@@ -45,7 +48,8 @@ describe('StatsService', () => {
       amount: 100,
       type: 'expense',
       categoryId: 'cat_saving',
-      account: 'Banco',
+      paymentMethod: 'cash',
+      account: 'Efectivo',
       date: today,
       time: '16:00',
       color: '#2ecc71',
@@ -82,13 +86,14 @@ describe('StatsService', () => {
   });
 
   it('keeps totalBalance / availableCash (Saldo Actual) independent of unpaid borrowed debts and credit card debt', () => {
-    // User has RD$ 20,000 in bank, but has a loan of RD$ 50,000 to pay in installments
+    // User has RD$ 20,000 in cash, but has a loan of RD$ 50,000 to pay in installments
     const salaryTx: Transaction = {
       id: 'tx_salary',
       amount: 20000,
       type: 'income',
       categoryId: 'cat_sal',
-      account: 'Banco',
+      paymentMethod: 'cash',
+      account: 'Efectivo',
       date: today,
       time: '09:00',
       color: '#2ecc71',
@@ -98,7 +103,7 @@ describe('StatsService', () => {
     const debts = [
       {
         id: 'debt_loan_1',
-        personOrInstitution: 'Préstamo Banco',
+        personOrInstitution: 'Préstamo Personal',
         amount: 50000,
         remainingAmount: 50000,
         type: 'borrowed' as const
@@ -126,7 +131,8 @@ describe('StatsService', () => {
       amount: 20000,
       type: 'income',
       categoryId: 'cat_sal',
-      account: 'Banco',
+      paymentMethod: 'cash',
+      account: 'Efectivo',
       date: today,
       time: '09:00',
       color: '#2ecc71',
@@ -139,10 +145,11 @@ describe('StatsService', () => {
       amount: 5000,
       type: 'expense',
       categoryId: 'cat_bills',
-      account: 'Banco',
+      paymentMethod: 'cash',
+      account: 'Efectivo',
       date: today,
       time: '11:00',
-      notes: 'Abono a deuda: Préstamo Banco',
+      notes: 'Abono a deuda: Préstamo Personal',
       color: '#ef4444',
       icon: 'ArrowUpRight'
     };
@@ -151,7 +158,7 @@ describe('StatsService', () => {
     const debts = [
       {
         id: 'debt_loan_1',
-        personOrInstitution: 'Préstamo Banco',
+        personOrInstitution: 'Préstamo Personal',
         amount: 50000,
         remainingAmount: 45000,
         type: 'borrowed' as const
