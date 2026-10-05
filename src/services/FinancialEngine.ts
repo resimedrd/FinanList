@@ -242,6 +242,14 @@ export class FinancialEngine {
   }
 
   /**
+   * Obtiene el saldo disponible de efectivo líquido puro.
+   */
+  static getAvailableLiquidCash(transactions: Transaction[], cards: PaymentCard[] = []): number {
+    const summary = FinancialEngine.calculateSummary(transactions, cards);
+    return summary.cashBalance;
+  }
+
+  /**
    * Valida minuciosamente una transacción antes de confirmarla.
    * Verifica límites de crédito, saldos de débito y disponibilidad de efectivo,
    * calculando montos faltantes y sugiriendo tarjetas alternativas con capacidad suficiente.

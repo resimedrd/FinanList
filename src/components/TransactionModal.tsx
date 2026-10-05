@@ -63,10 +63,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
   const [inlineCatName, setInlineCatName] = useState<string>('');
   const [inlineCatColor, setInlineCatColor] = useState<string>('#6366f1');
   const [inlineCatIcon, setInlineCatIcon] = useState<string>('Tag');
+  const [formError, setFormError] = useState<string | null>(null);
 
   const handleCreateInlineCategory = () => {
     if (!inlineCatName.trim()) {
-      alert('Por favor, ingresa un nombre para la categoría.');
+      setFormError('Por favor, ingresa un nombre para la categoría.');
       return;
     }
     const newCatId = addCategory({
@@ -77,6 +78,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
     setSelectedCatId(newCatId);
     setInlineCatName('');
     setShowInlineAddCategory(false);
+    setFormError(null);
   };
 
   // Top 5 frequent categories for current type
@@ -100,6 +102,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
   // Default values or load edit details
   useEffect(() => {
     if (isOpen) {
+      setFormError(null);
       setSuggestedCatId('');
       setShowInlineAddCategory(false);
       setInlineCatName('');
@@ -261,15 +264,17 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
   const handleSave = async () => {
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) {
-      alert('Por favor, ingresa un monto válido.');
+      setFormError('Por favor, ingresa un monto válido mayor a 0.');
       return;
     }
 
     const categoryObj = categories.find(c => c.id === selectedCatId);
     if (!categoryObj) {
-      alert('Por favor, selecciona una categoría.');
+      setFormError('Por favor, selecciona una categoría para el movimiento.');
       return;
     }
+
+    setFormError(null);
 
     const tags = tagsInput
       .split(',')
@@ -301,12 +306,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
     try {
       setIsSaving(true);
       if (editTransaction) {
-        await updateTransaction({
+        updateTransaction({
           ...editTransaction,
           ...transactionData
         });
       } else {
-        await addTransaction(transactionData);
+        addTransaction(transactionData);
         try {
           if (selectedCard) {
             localStorage.setItem('finanlist_last_card_id', selectedCard.id);
@@ -322,7 +327,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
       onClose();
     } catch (err) {
       console.error('Error saving transaction:', err);
-      alert('Hubo un error al guardar el movimiento. Por favor intenta de nuevo.');
+      setFormError('Hubo un error al guardar el movimiento. Por favor intenta de nuevo.');
     } finally {
       setIsSaving(false);
     }
@@ -911,6 +916,24 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
 
         {/* Sticky Action Bar */}
         <div style={styles.stickyFooter}>
+          {formError && (
+            <div style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#ef4444',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginBottom: '10px'
+            }}>
+              <DynamicIcon name="AlertTriangle" size={14} color="#ef4444" />
+              <span>{formError}</span>
+            </div>
+          )}
           <button 
             className="btn btn-primary" 
             onClick={handleSave} 

@@ -4,6 +4,8 @@ import { DynamicIcon } from '../components/DynamicIcon';
 import { Budget, SavingGoal, Debt, PaymentMethod } from '../models/types';
 import { FinancialEngine } from '../services/FinancialEngine';
 import { StatsService } from '../services/StatsService';
+import { Modal } from '../components/Modal';
+import { TransferReceiptModal, TransferReceiptData } from '../components/TransferReceiptModal';
 
 export const BudgetView: React.FC = () => {
   const {
@@ -257,6 +259,14 @@ export const BudgetView: React.FC = () => {
   const [debtDueDate, setDebtDueDate] = useState<string>('');
   const [debtNotes, setDebtNotes] = useState<string>('');
   const [debtLinkedCardId, setDebtLinkedCardId] = useState<string>('');
+
+  // Abonar Debt Modal State
+  const [abonarDebtTarget, setAbonarDebtTarget] = useState<Debt | null>(null);
+  const [abonarAmount, setAbonarAmount] = useState<string>('');
+  const [abonarError, setAbonarError] = useState<string | null>(null);
+  const [abonarMethod, setAbonarMethod] = useState<PaymentMethod>('cash');
+  const [abonarCardId, setAbonarCardId] = useState<string>('');
+  const [receiptData, setReceiptData] = useState<TransferReceiptData | null>(null);
 
 
 
@@ -775,43 +785,82 @@ export const BudgetView: React.FC = () => {
   };
 
   const handleAbonarDebt = (debt: Debt) => {
-    const amountStr = prompt(`¿Cuánto deseas abonar a la deuda de "${debt.personOrInstitution}"? (Restante: ${profile.currency}${debt.remainingAmount.toLocaleString()})`);
-    if (!amountStr) return;
-    const amount = parseFloat(amountStr);
+    setAbonarDebtTarget(debt);
+    setAbonarAmount('');
+    setAbonarError(null);
+    setAbonarMethod('cash');
+    setAbonarCardId('');
+  };
+
+  const handleConfirmAbonar = () => {
+    if (!abonarDebtTarget) return;
+    const amount = parseFloat(abonarAmount);
     if (isNaN(amount) || amount <= 0) {
-      alert('Por favor, ingresa un monto válido.');
+      setAbonarError('Por favor, ingresa un monto válido mayor a 0.');
+      return;
+    }
+    if (amount > abonarDebtTarget.remainingAmount) {
+      setAbonarError(`El monto no puede exceder el restante (${profile.currency} ${abonarDebtTarget.remainingAmount.toLocaleString()}).`);
       return;
     }
 
-    promptAccountSelection(`Cuenta para realizar el abono`, (account, cardId, paymentMethod) => {
-      const { newRemaining, isFullyPaid, linkedCardId } = FinancialEngine.calculateDebtPaymentImpact(debt, amount);
-      if (isFullyPaid) {
-        deleteDebt(debt.id);
-        alert('🎉 ¡Deuda totalmente saldada y eliminada!');
-      } else {
-        updateDebt({
-          ...debt,
-          remainingAmount: newRemaining
-        });
-      }
+    const availableCash = FinancialEngine.getAvailableLiquidCash(transactions, cards);
+    const sourceCard = abonarMethod === 'card' ? cards.find(c => c.id === abonarCardId) : undefined;
+    const currentSourceFunds = sourceCard ? (sourceCard.currentBalance ?? 0) : availableCash;
 
-      const now = new Date();
-      // Si la deuda está vinculada a una tarjeta de crédito, registrar como tipo 'payment' con destinationCardId para liberar el cupo sin duplicar transacciones
-      const isLinkedCard = !!linkedCardId;
-      addTransaction({
-        amount,
-        type: isLinkedCard ? 'payment' : (debt.type === 'borrowed' ? 'expense' : 'income'),
-        destinationCardId: isLinkedCard ? linkedCardId : undefined,
-        categoryId: debt.type === 'borrowed' ? 'cat_bills' : 'cat_extra',
-        paymentMethod: paymentMethod || (cardId ? 'card' : 'cash'),
-        account,
-        cardId,
-        date: now.toISOString().split('T')[0],
-        time: now.toTimeString().split(' ')[0].slice(0, 5),
-        notes: `${debt.type === 'borrowed' ? 'Abono a deuda' : 'Cobro de préstamo'}: ${debt.personOrInstitution}`,
-        color: debt.type === 'borrowed' ? 'var(--color-danger)' : 'var(--color-success)',
-        icon: debt.type === 'borrowed' ? 'TrendingDown' : 'Coins'
+    if (amount > currentSourceFunds) {
+      const sourceLabel = sourceCard ? sourceCard.name : 'Efectivo';
+      setAbonarError(`Saldo insuficiente en ${sourceLabel}. Tienes ${profile.currency} ${currentSourceFunds.toLocaleString()} disponible.`);
+      return;
+    }
+
+    const { newRemaining, isFullyPaid, linkedCardId } = FinancialEngine.calculateDebtPaymentImpact(abonarDebtTarget, amount);
+    if (isFullyPaid) {
+      deleteDebt(abonarDebtTarget.id);
+    } else {
+      updateDebt({
+        ...abonarDebtTarget,
+        remainingAmount: newRemaining
       });
+    }
+
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().split(' ')[0].slice(0, 5);
+    const isLinkedCard = !!linkedCardId;
+    const targetCard = isLinkedCard ? cards.find(c => c.id === linkedCardId) : undefined;
+
+    addTransaction({
+      amount,
+      type: isLinkedCard ? 'payment' : (abonarDebtTarget.type === 'borrowed' ? 'expense' : 'income'),
+      destinationCardId: isLinkedCard ? linkedCardId : undefined,
+      categoryId: abonarDebtTarget.type === 'borrowed' ? 'cat_bills' : 'cat_extra',
+      paymentMethod: abonarMethod,
+      account: sourceCard ? sourceCard.name : 'Efectivo',
+      cardId: sourceCard ? sourceCard.id : undefined,
+      date: dateStr,
+      time: timeStr,
+      notes: `${abonarDebtTarget.type === 'borrowed' ? 'Abono a deuda' : 'Cobro de préstamo'}: ${abonarDebtTarget.personOrInstitution}`,
+      color: abonarDebtTarget.type === 'borrowed' ? 'var(--color-danger)' : 'var(--color-success)',
+      icon: abonarDebtTarget.type === 'borrowed' ? 'TrendingDown' : 'Coins'
+    });
+
+    const targetDebt = abonarDebtTarget;
+    setAbonarDebtTarget(null);
+
+    // Show digital receipt
+    setReceiptData({
+      referenceId: `ABN-${Date.now().toString().slice(-6)}`,
+      amount,
+      currency: profile.currency,
+      sourceName: sourceCard ? `${sourceCard.name} (${sourceCard.bank})` : 'Efectivo disponible',
+      destinationName: targetCard ? `${targetCard.name} (Cupo liberado)` : targetDebt.personOrInstitution,
+      date: dateStr,
+      time: timeStr,
+      title: isFullyPaid ? '¡Deuda Totalmente Saldada!' : '¡Abono Registrado con Éxito!',
+      subtitle: isFullyPaid ? 'Pasivo Cancelado' : `Restante: ${profile.currency} ${newRemaining.toLocaleString()}`,
+      notes: `Abono a ${targetDebt.personOrInstitution}`,
+      availableRestored: isLinkedCard ? amount : undefined
     });
   };
 
@@ -844,7 +893,19 @@ export const BudgetView: React.FC = () => {
       });
       
       deleteDebt(debt.id);
-      alert('Deuda liquidada y eliminada con éxito.');
+      setReceiptData({
+        referenceId: `LIQ-${Date.now().toString().slice(-6)}`,
+        amount: debt.remainingAmount,
+        currency: profile.currency,
+        sourceName: cardId ? (cards.find(c => c.id === cardId)?.name || account) : 'Efectivo disponible',
+        destinationName: isLinkedCard ? (cards.find(c => c.id === debt.linkedCardId)?.name || 'Tarjeta vinculada') : debt.personOrInstitution,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        title: '¡Deuda Totalmente Liquidada!',
+        subtitle: 'Pasivo Eliminado',
+        notes: `Liquidación total con ${debt.personOrInstitution}`,
+        availableRestored: isLinkedCard ? debt.remainingAmount : undefined
+      });
     });
   };
 
@@ -867,7 +928,18 @@ export const BudgetView: React.FC = () => {
       });
       
       deleteDebt(debt.id);
-      alert('Préstamo cobrado y eliminado con éxito.');
+      setReceiptData({
+        referenceId: `COB-${Date.now().toString().slice(-6)}`,
+        amount: debt.remainingAmount,
+        currency: profile.currency,
+        sourceName: debt.personOrInstitution,
+        destinationName: account,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        title: '¡Préstamo Cobrado con Éxito!',
+        subtitle: 'Monto Reincorporado a Fondos',
+        notes: `Cobro de préstamo de ${debt.personOrInstitution}`
+      });
     });
   };
 
@@ -2777,6 +2849,160 @@ export const BudgetView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal Abonar a Deuda */}
+      {abonarDebtTarget && (
+        <Modal
+          isOpen={!!abonarDebtTarget}
+          onClose={() => setAbonarDebtTarget(null)}
+          title={`Abonar a ${abonarDebtTarget.personOrInstitution}`}
+          maxWidth="400px"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{
+              backgroundColor: 'var(--bg-secondary, rgba(255, 255, 255, 0.04))',
+              borderRadius: '12px',
+              padding: '12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              border: '1px solid var(--border-color)'
+            }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Monto Pendiente:</span>
+              <span style={{ fontSize: '15px', fontWeight: '800', color: abonarDebtTarget.type === 'borrowed' ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                {profile.currency} {abonarDebtTarget.remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            {/* Selector de origen */}
+            <div className="input-group">
+              <label className="input-label">Medio de Pago</label>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <button
+                  type="button"
+                  className={`btn ${abonarMethod === 'cash' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ flex: 1, padding: '8px', fontSize: '12px' }}
+                  onClick={() => {
+                    setAbonarMethod('cash');
+                    setAbonarError(null);
+                  }}
+                >
+                  💵 Efectivo
+                </button>
+                <button
+                  type="button"
+                  className={`btn ${abonarMethod === 'card' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ flex: 1, padding: '8px', fontSize: '12px' }}
+                  onClick={() => {
+                    setAbonarMethod('card');
+                    if (!abonarCardId && activeCards.length > 0) {
+                      setAbonarCardId(activeCards[0].id);
+                    }
+                    setAbonarError(null);
+                  }}
+                >
+                  💳 Tarjeta
+                </button>
+              </div>
+
+              {abonarMethod === 'card' && (
+                <select
+                  value={abonarCardId}
+                  onChange={(e) => {
+                    setAbonarCardId(e.target.value);
+                    setAbonarError(null);
+                  }}
+                  className="input-field"
+                  style={{ marginTop: '4px' }}
+                >
+                  {activeCards.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.bank}) — {c.type === 'credit' ? `Cupo: ${c.currency}${(c.creditLimit! - (c.balanceUsed || 0)).toLocaleString()}` : `Saldo: ${c.currency}${(c.currentBalance || 0).toLocaleString()}`}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Monto del abono */}
+            <div className="input-group">
+              <label className="input-label">Monto a Abonar ({profile.currency})</label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={abonarAmount}
+                onChange={(e) => {
+                  setAbonarAmount(e.target.value);
+                  setAbonarError(null);
+                }}
+                className="input-field"
+                autoFocus
+              />
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                {[0.25, 0.5, 1.0].map(ratio => {
+                  const part = Math.round(abonarDebtTarget.remainingAmount * ratio);
+                  return (
+                    <button
+                      key={ratio}
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ flex: 1, padding: '4px', fontSize: '11px' }}
+                      onClick={() => setAbonarAmount(part.toString())}
+                    >
+                      {ratio === 1 ? 'Total (100%)' : `${ratio * 100}%`}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {abonarError && (
+              <div style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                color: '#ef4444',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                <DynamicIcon name="AlertTriangle" size={14} color="#ef4444" />
+                <span>{abonarError}</span>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setAbonarDebtTarget(null)}
+                style={{ flex: 1 }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleConfirmAbonar}
+                style={{ flex: 1 }}
+              >
+                Confirmar Abono
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Comprobante Digital */}
+      <TransferReceiptModal
+        isOpen={!!receiptData}
+        onClose={() => setReceiptData(null)}
+        data={receiptData}
+      />
     </div>
   );
 };

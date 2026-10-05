@@ -4,6 +4,7 @@ import { PaymentCard, CardType } from '../models/types';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { Modal } from '../components/Modal';
 import { FinancialEngine } from '../services/FinancialEngine';
+import { TransferReceiptModal, TransferReceiptData } from '../components/TransferReceiptModal';
 
 interface CardsViewProps {
   onBack: () => void;
@@ -22,6 +23,7 @@ const CARD_THEMES = [
 export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
   const {
     cards,
+    transactions,
     addCard,
     updateCard,
     deleteCard,
@@ -65,6 +67,9 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
   const [payAmount, setPayAmount] = useState<string>('');
   const [payDate, setPayDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [payNotes, setPayNotes] = useState<string>('');
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [cardFormError, setCardFormError] = useState<string | null>(null);
+  const [receiptData, setReceiptData] = useState<TransferReceiptData | null>(null);
 
   // Delete confirmation
   const [deletingCard, setDeletingCard] = useState<PaymentCard | null>(null);
@@ -114,13 +119,14 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
 
   const handleSaveCard = () => {
     if (!formName.trim()) {
-      alert('Por favor, ingresa un nombre o alias para la tarjeta.');
+      setCardFormError('Por favor, ingresa un nombre o alias para la tarjeta.');
       return;
     }
     if (!formBank.trim()) {
-      alert('Por favor, ingresa el banco emisor.');
+      setCardFormError('Por favor, ingresa el banco emisor.');
       return;
     }
+    setCardFormError(null);
 
     const cleanDigits = formLastFour.replace(/\D/g, '').slice(-4);
 
@@ -207,7 +213,8 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
   const handleOpenPaymentModal = (targetCard?: PaymentCard) => {
     const activeCreditCards = cards.filter(c => c.isActive && c.type === 'credit');
     if (activeCreditCards.length === 0) {
-      alert('No tienes tarjetas de crédito activas registradas para realizar pagos.');
+      setPaymentError('No tienes tarjetas de crédito activas registradas para realizar pagos.');
+      setShowPaymentModal(true);
       return;
     }
     const target = targetCard && targetCard.type === 'credit' ? targetCard : activeCreditCards[0];
@@ -216,17 +223,36 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
     setPayAmount((target.balanceUsed ?? 0) > 0 ? (target.balanceUsed ?? 0).toString() : '');
     setPayDate(new Date().toISOString().split('T')[0]);
     setPayNotes('');
+    setPaymentError(null);
     setShowPaymentModal(true);
   };
 
   const handleExecutePayment = () => {
     const amount = parseFloat(payAmount);
     if (isNaN(amount) || amount <= 0) {
-      alert('Por favor, ingresa un monto válido a pagar.');
+      setPaymentError('Por favor, ingresa un monto válido a pagar.');
       return;
     }
     if (!payTargetCardId) {
-      alert('Por favor, selecciona la tarjeta de crédito a pagar.');
+      setPaymentError('Por favor, selecciona la tarjeta de crédito a pagar.');
+      return;
+    }
+
+    const target = cards.find(c => c.id === payTargetCardId);
+    if (!target) {
+      setPaymentError('Tarjeta destino no encontrada.');
+      return;
+    }
+
+    // Pre-flight check funds
+    const availableCash = FinancialEngine.getAvailableLiquidCash(transactions, cards);
+    const sourceCard = paySourceCardId ? cards.find(c => c.id === paySourceCardId) : null;
+    const currentSourceFunds = sourceCard ? (sourceCard.currentBalance ?? 0) : availableCash;
+
+    if (amount > currentSourceFunds) {
+      const sourceLabel = sourceCard ? sourceCard.name : 'Efectivo';
+      const diff = amount - currentSourceFunds;
+      setPaymentError(`Saldo insuficiente en ${sourceLabel}. Tienes ${formatAmount(currentSourceFunds, sourceCard?.currency || profile.currency)} disponible (Faltan ${formatAmount(diff, profile.currency)}).`);
       return;
     }
 
@@ -243,7 +269,22 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
     });
 
     setShowPaymentModal(false);
-    alert('¡Pago de tarjeta registrado con éxito! El crédito disponible ha sido restaurado.');
+    setPaymentError(null);
+
+    // Show high-fidelity digital voucher immediately
+    setReceiptData({
+      referenceId: `PAG-${Date.now().toString().slice(-6)}`,
+      amount,
+      currency: target.currency || profile.currency,
+      sourceName: sourceCard ? `${sourceCard.name} (${sourceCard.bank})` : 'Efectivo disponible',
+      destinationName: `${target.name} (${target.bank})`,
+      date: payDate,
+      time,
+      title: '¡Pago a Tarjeta Registrado!',
+      subtitle: 'Crédito Restaurado con Éxito',
+      notes: payNotes.trim() || undefined,
+      availableRestored: amount
+    });
   };
 
   const handleConfirmDelete = () => {
@@ -1125,11 +1166,32 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
             />
           </div>
 
+          {cardFormError && (
+            <div style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#ef4444',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <DynamicIcon name="AlertTriangle" size={14} color="#ef4444" />
+              <span>{cardFormError}</span>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => setShowCardModal(false)}
+              onClick={() => {
+                setCardFormError(null);
+                setShowCardModal(false);
+              }}
               style={{ flex: 1 }}
             >
               Cancelar
@@ -1199,6 +1261,44 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
             </select>
           </div>
 
+          {/* Source balance feedback indicator */}
+          {(() => {
+            const sourceDebit = paySourceCardId ? cards.find(c => c.id === paySourceCardId) : null;
+            const availableCash = FinancialEngine.getAvailableLiquidCash(transactions, cards);
+            const sourceBalance = sourceDebit ? (sourceDebit.currentBalance ?? 0) : availableCash;
+            const sourceCurrency = sourceDebit?.currency || profile.currency;
+            const numAmount = parseFloat(payAmount) || 0;
+            const isInsufficient = numAmount > 0 && numAmount > sourceBalance;
+
+            return (
+              <div style={{
+                backgroundColor: isInsufficient ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.06)',
+                border: `1px solid ${isInsufficient ? 'rgba(239, 68, 68, 0.28)' : 'rgba(16, 185, 129, 0.18)'}`,
+                borderRadius: '10px',
+                padding: '10px 12px',
+                fontSize: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    Disponible en {sourceDebit ? sourceDebit.name : 'Efectivo'}:
+                  </span>
+                  <span style={{ fontWeight: '700', color: isInsufficient ? '#ef4444' : '#10b981' }}>
+                    {formatAmount(sourceBalance, sourceCurrency)}
+                  </span>
+                </div>
+                {isInsufficient && (
+                  <div style={{ color: '#ef4444', fontWeight: '600', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                    <DynamicIcon name="AlertTriangle" size={12} color="#ef4444" />
+                    <span>Faltan {formatAmount(numAmount - sourceBalance, sourceCurrency)} para completar este pago.</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Amount */}
           <div className="input-group">
             <label className="input-label">Monto del Pago ({profile.currency})</label>
@@ -1207,7 +1307,10 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
               step="0.01"
               placeholder="0.00"
               value={payAmount}
-              onChange={(e) => setPayAmount(e.target.value)}
+              onChange={(e) => {
+                setPayAmount(e.target.value);
+                setPaymentError(null);
+              }}
               className="input-field"
               autoFocus
               required
@@ -1237,11 +1340,32 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
             />
           </div>
 
+          {paymentError && (
+            <div style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#ef4444',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <DynamicIcon name="AlertTriangle" size={14} color="#ef4444" />
+              <span>{paymentError}</span>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => setShowPaymentModal(false)}
+              onClick={() => {
+                setPaymentError(null);
+                setShowPaymentModal(false);
+              }}
               style={{ flex: 1 }}
             >
               Cancelar
@@ -1311,6 +1435,14 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
           </div>
         </div>
       </Modal>
+
+      {/* 4. Comprobante Digital de Transferencia / Pago */}
+      <TransferReceiptModal
+        isOpen={!!receiptData}
+        onClose={() => setReceiptData(null)}
+        data={receiptData}
+        onViewHistory={onBack}
+      />
     </div>
   );
 };

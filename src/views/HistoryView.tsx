@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { Transaction } from '../models/types';
+import { useDebounce } from '../utils/useDebounce';
 
 interface HistoryViewProps {
   onOpenTransactionModal: (editTx?: Transaction) => void;
@@ -12,6 +13,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
 
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 250);
   const [selectedType, setSelectedType] = useState<'all' | 'income' | 'expense' | 'payment'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedAccount, setSelectedAccount] = useState<string>('all');
@@ -54,12 +56,13 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
   // Filter transactions dynamically
   const filteredTxs = transactions.filter(tx => {
     // Search Term match (amount, notes, category name, tags)
+    const term = debouncedSearchTerm.trim().toLowerCase();
     const matchesSearch = 
-      searchTerm === '' ||
-      tx.amount.toString().includes(searchTerm) ||
-      (tx.notes && tx.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      tx.categoryId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (tx.tags && tx.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())));
+      term === '' ||
+      tx.amount.toString().includes(term) ||
+      (tx.notes && tx.notes.toLowerCase().includes(term)) ||
+      tx.categoryId.toLowerCase().includes(term) ||
+      (tx.tags && tx.tags.some(tag => tag.toLowerCase().includes(term)));
 
     // Type match
     const matchesType = selectedType === 'all' || tx.type === selectedType;

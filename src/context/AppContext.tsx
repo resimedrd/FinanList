@@ -668,13 +668,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 3. Update React state immediately
     reloadAll();
 
-    // 4. Sync to Appwrite
+    // 4. Sync to Appwrite (Background / Non-blocking)
     if (isCloudSynced && user) {
-      try {
-        await syncTransactionToCloud(newTx, user.id);
-      } catch (e) {
+      syncTransactionToCloud(newTx, user.id).catch(e => {
         console.warn('Error syncing new transaction to cloud:', e);
-      }
+      });
     }
   };
 
@@ -700,7 +698,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             };
             LocalRepository.updateGoal(updatedGoal);
             if (isCloudSynced && user) {
-              await AppwriteService.syncGoal(updatedGoal, user.id);
+              AppwriteService.syncGoal(updatedGoal, user.id).catch(console.warn);
             }
           }
         }
@@ -717,7 +715,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             };
             LocalRepository.updateGoal(updatedGoal);
             if (isCloudSynced && user) {
-              await AppwriteService.syncGoal(updatedGoal, user.id);
+              AppwriteService.syncGoal(updatedGoal, user.id).catch(console.warn);
             }
           }
         }
@@ -727,11 +725,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     reloadAll();
 
     if (isCloudSynced && user) {
-      try {
-        await syncTransactionToCloud(tx, user.id);
-      } catch (e) {
+      syncTransactionToCloud(tx, user.id).catch(e => {
         console.warn('Error updating transaction in cloud:', e);
-      }
+      });
     }
   };
 
@@ -754,7 +750,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
           LocalRepository.updateGoal(updatedGoal);
           if (isCloudSynced && user) {
-            await AppwriteService.syncGoal(updatedGoal, user.id);
+            AppwriteService.syncGoal(updatedGoal, user.id).catch(console.warn);
           }
         }
       }
@@ -763,11 +759,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     reloadAll();
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.deleteTransaction(id);
-      } catch (e) {
+      AppwriteService.deleteTransaction(id).catch(e => {
         console.warn('Error deleting transaction in cloud:', e);
-      }
+      });
     }
   };
 
