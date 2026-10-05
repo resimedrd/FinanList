@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { DynamicIcon } from './DynamicIcon';
 import { Transaction, Category } from '../models/types';
-import { LocalRepository } from '../repositories/LocalRepository';
 import { compressImageFile } from '../utils/imageUtils';
+import { useDebounce } from '../utils/useDebounce';
+import { CategoryDetector, CategoryDetectionResult } from '../services/CategoryDetector';
 
 
 type CardImpact =
@@ -48,6 +49,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
   const [date, setDate] = useState<string>('');
   const [time, setTime] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
+  const [detectedResult, setDetectedResult] = useState<CategoryDetectionResult | null>(null);
+  const debouncedNotes = useDebounce(notes, 350);
   const [tagsInput, setTagsInput] = useState<string>('');
   const [favorite, setFavorite] = useState<boolean>(false);
   const [suggestedCatId, setSuggestedCatId] = useState<string>('');
@@ -103,6 +106,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
   useEffect(() => {
     if (isOpen) {
       setFormError(null);
+      setDetectedResult(null);
       setSuggestedCatId('');
       setShowInlineAddCategory(false);
       setInlineCatName('');
@@ -163,6 +167,24 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
       }
     }
   }, [isOpen, editTransaction, defaultType, cards]);
+
+  // Auto-categorize via CategoryDetector with debounce
+  useEffect(() => {
+    // Only auto-categorize expenses when user is typing notes
+    if (type !== 'expense' || !debouncedNotes.trim()) {
+      setDetectedResult(null);
+      return;
+    }
+    const result = CategoryDetector.detect(debouncedNotes, categories);
+    if (result) {
+      setDetectedResult(result);
+      setSelectedCatId(result.categoryId);
+      setSelectedSubCatId('');
+      setSuggestedCatId(result.categoryId);
+    } else {
+      setDetectedResult(null);
+    }
+  }, [debouncedNotes, type, categories]);
 
   // Filter categories by type
   const isIncomeCat = (catId: string) => ['cat_sal', 'cat_inv', 'cat_extra'].includes(catId);
@@ -324,6 +346,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
           // Ignore localStorage errors in private mode
         }
       }
+
+      // Memorizar asociación en la memoria local del usuario
+      if (type === 'expense' && notes.trim() && selectedCatId) {
+        CategoryDetector.learn(notes, selectedCatId);
+      }
+
       onClose();
     } catch (err) {
       console.error('Error saving transaction:', err);
@@ -395,6 +423,75 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
               autoFocus
             />
           </div>
+
+          {/* Concepto / Comercio Input con Auto-Categorización Local */}
+          <div className="input-group" style={{ marginTop: '10px', marginBottom: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label className="input-label" style={{ margin: 0 }}>Concepto o Comercio</label>
+              {detectedResult && (
+                <span style={{ fontSize: '11px', color: '#10b981', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <DynamicIcon name="Sparkles" size={11} color="#10b981" />
+                  <span>{detectedResult.source === 'user_memory' ? 'Recordado de tus hábitos' : 'Detectado automáticamente'}</span>
+                </span>
+              )}
+            </div>
+            <input
+              type="text"
+              placeholder="Ej: La Sirena, McDonalds, Gasolina, Edesur..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="input-field"
+              style={{ fontSize: '14px', padding: '10px 12px' }}
+            />
+          </div>
+
+          {/* Chip interactivo de categoría detectada */}
+          {detectedResult && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                padding: '8px 12px',
+                borderRadius: '10px',
+                marginBottom: '10px',
+                animation: 'fadeIn 0.2s ease',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Categoría:</span>
+                <span style={{ fontSize: '12px', fontWeight: '700', color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {(() => {
+                    const cat = categories.find(c => c.id === detectedResult.categoryId);
+                    return (
+                      <>
+                        {cat && <DynamicIcon name={cat.icon} size={14} color={cat.color} />}
+                        <span>{cat ? cat.name : detectedResult.categoryName}</span>
+                      </>
+                    );
+                  })()}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetectedResult(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-primary)',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  padding: '2px 6px',
+                  borderRadius: '6px',
+                }}
+              >
+                (Cambiar)
+              </button>
+            </div>
+          )}
 
           {/* 1-Tap Quick Frequent Categories Chips */}
           {frequentCategories.length > 0 && (
@@ -808,33 +905,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
                 />
               </div>
             </div>
-
-            <div className="input-group">
-              <label className="input-label">Notas / Concepto (Auto-categorización Inteligente)</label>
-              <textarea
-                placeholder="Ej. McDonalds, Gasolina, Netflix, Farmacia..."
-                value={notes}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setNotes(val);
-                  if (!val.trim()) {
-                    setSuggestedCatId('');
-                    return;
-                  }
-                  const suggested = LocalRepository.getCategorySuggestionByText(val);
-                  if (suggested) {
-                    setSelectedCatId(suggested);
-                    setSelectedSubCatId('');
-                    setSuggestedCatId(suggested);
-                  } else {
-                    setSuggestedCatId('');
-                  }
-                }}
-                className="input-field"
-                style={{ height: '70px', resize: 'none' }}
-              />
-            </div>
-
 
             <div className="input-group">
               <label className="input-label">Etiquetas (separadas por comas)</label>

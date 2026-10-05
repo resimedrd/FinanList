@@ -1,4 +1,5 @@
 import { Category, Transaction, Budget, SavingGoal, UserProfile, RecurringTransaction, Debt, PaymentCard, FinancialNotification } from '../models/types';
+import { CategoryDetector } from '../services/CategoryDetector';
 
 // Key names for localStorage
 const KEYS = {
@@ -58,6 +59,7 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat_shop', name: 'Compras', color: '#ff66b2', icon: 'ShoppingBag' },
   { id: 'cat_bills', name: 'Servicios', color: '#ffcc00', icon: 'Zap' },
   { id: 'cat_health', name: 'Salud', color: '#22c55e', icon: 'HeartPulse' },
+  { id: 'cat_personal', name: 'Cuidado Personal', color: '#ec4899', icon: 'Sparkles' },
   { id: 'cat_travel', name: 'Viajes', color: '#00cccc', icon: 'Plane' },
   { id: 'cat_saving', name: 'Ahorro', color: '#2ecc71', icon: 'Target' },
   { id: 'cat_emergency', name: 'Imprevistos / Emergencias', color: '#ef4444', icon: 'ShieldAlert' },
@@ -283,6 +285,12 @@ export class LocalRepository {
         const finalCats = JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]');
         if (!finalCats.some((c: Category) => c.id === 'cat_emergency')) {
           finalCats.push({ id: 'cat_emergency', name: 'Imprevistos / Emergencias', color: '#ef4444', icon: 'ShieldAlert' });
+          localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(finalCats));
+        }
+
+        // Ensure cat_personal exists for existing users (smooth migration)
+        if (!finalCats.some((c: Category) => c.id === 'cat_personal')) {
+          finalCats.push({ id: 'cat_personal', name: 'Cuidado Personal', color: '#ec4899', icon: 'Sparkles' });
           localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(finalCats));
         }
       } catch (e) {
@@ -656,46 +664,8 @@ export class LocalRepository {
 
   // AI Local Classification Helper
   static getCategorySuggestionByText(text: string): string {
-    const input = text.toLowerCase().trim();
-    if (!input) return '';
-    
-    // Supermercado / Compras para casa
-    if (/supermercado|bravo|nacional|sirena|jumbo|colmado|despensa|comida en casa|groceries/i.test(input)) {
-      return 'cat_food_super';
-    }
-    // Comida fuera / Pedidos / Salidas
-    if (/mcdonald|pizza|burger|burger king|restaurant|café|coffee|starbucks|uber eats|pedidosya|comida fuera|delivery|pedido|cena|almuerzo|desayuno|salida|snack|dulce|pan/i.test(input)) {
-      return 'cat_food_out';
-    }
-    // Transport keywords
-    if (/uber|taxi|diDi|indriver|carro|combustible|gasolina|gasoil|peaje|taller|repuesto|mantenimiento|moto|metro|autobús|publico/i.test(input)) {
-      return 'cat_trans';
-    }
-    // Entertainment keywords
-    if (/netflix|spotify|disney|hbo|cine|movie|teatro|concierto|salida|bar|trago|cerveza|fiesta|juego|gaming|steam|playstation/i.test(input)) {
-      return 'cat_fun';
-    }
-    // Shopping keywords
-    if (/tienda|ropa|zapatos|camisa|mall|plaza|zara|h&m|amazon|shein|ebay|regalo|juguete|compras|adornos|reloj/i.test(input)) {
-      return 'cat_shop';
-    }
-    // Bills & Services keywords
-    if (/teléfono|claro|altice|wind|luz|edeeste|edesur|edenorte|agua|internet|cable|basura|alquiler|casa|mantenimiento/i.test(input)) {
-      return 'cat_bills';
-    }
-    // Health keywords
-    if (/farmacia|carol|medicamento|medicina|doctor|consulta|clinica|hospital|dentista|odontologo|seguro medico/i.test(input)) {
-      return 'cat_health';
-    }
-    // Travel keywords
-    if (/vuelo|avion|hotel|airbnb|playa|resort|reserva|maleta|vacaciones/i.test(input)) {
-      return 'cat_travel';
-    }
-    // Savings keywords
-    if (/ahorro|depósito|meta|cooperativa|fondo/i.test(input)) {
-      return 'cat_saving';
-    }
-    
-    return '';
+    const categories = this.getCategories();
+    const result = CategoryDetector.detect(text, categories);
+    return result ? result.categoryId : '';
   }
 }

@@ -1,10 +1,9 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { StatsService } from '../services/StatsService';
-import { FinancialEngine } from '../services/FinancialEngine';
 import { DonutChart } from '../components/DonutChart';
 import { DynamicIcon } from '../components/DynamicIcon';
-import { Transaction, Budget } from '../models/types';
+import { Transaction } from '../models/types';
 import { NotificationCenter } from '../components/NotificationCenter';
 
 interface HomeViewProps {
@@ -21,7 +20,7 @@ const FINANCE_QUOTES = [
 ];
 
 export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) => {
-  const { transactions, budgets, profile, deleteTransaction, addTransaction, categories, setActiveTab, stealthMode, setStealthMode, goals, debts, cards, notifications } = useApp();
+  const { transactions, budgets, profile, deleteTransaction, categories, setActiveTab, stealthMode, setStealthMode, goals, debts, cards, notifications } = useApp();
   const [showNotificationCenter, setShowNotificationCenter] = React.useState<boolean>(false);
   const unreadNotifsCount = notifications.filter(n => !n.isRead).length;
   // Check if monthly budget report should appear automatically (strictly on Day 1 of each month)
@@ -95,15 +94,6 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
     localStorage.setItem('finanlist_dismissed_report_' + monthlyReportData.prevYM, 'true');
     setShowMonthlyBudgetCard(false);
   };
-
-  // Quick Expense Bottom Sheet State
-  const [showQuickExpenseModal, setShowQuickExpenseModal] = React.useState<boolean>(false);
-  const [quickExpenseTarget, setQuickExpenseTarget] = React.useState<{ categoryId: string; name: string; budget?: Budget } | null>(null);
-  const [quickExpenseAmount, setQuickExpenseAmount] = React.useState<string>('');
-  const [quickExpenseNotes, setQuickExpenseNotes] = React.useState<string>('');
-  const [quickExpenseIsEmergency, setQuickExpenseIsEmergency] = React.useState<boolean>(false);
-  const [quickExpenseMethod, setQuickExpenseMethod] = React.useState<'cash' | 'card'>('card');
-  const [quickExpenseCardId, setQuickExpenseCardId] = React.useState<string>('');
 
   // Get daily/weekly random quote based on day
   const quoteIdx = new Date().getDate() % FINANCE_QUOTES.length;
@@ -207,129 +197,8 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
 
   const weeklyReport = getWeeklyReport();
 
-  // Calculate category usage frequencies from transactions history
-  const getUsageFrequency = (categoryId: string) => {
-    return transactions.filter(tx => tx.categoryId === categoryId).length;
-  };
-
-  // Get active budgets that have a category or fallback to all main categories
-  const activeCategoryBudgets = budgets.filter(b => b.categoryId);
-  const rawPills = activeCategoryBudgets.length > 0 
-    ? activeCategoryBudgets.map(b => {
-        const cat = categories.find(c => c.id === b.categoryId);
-        return {
-          id: b.id,
-          name: b.name || cat?.name || 'Gasto',
-          categoryId: b.categoryId || 'cat_extra',
-          color: cat?.color || 'var(--color-primary)',
-          icon: cat?.icon || 'Tag',
-          budget: b
-        };
-      })
-    : categories
-        .filter(c => !c.parentId && !['cat_sal', 'cat_inv', 'cat_extra'].includes(c.id))
-        .map(cat => ({
-          id: cat.id,
-          name: cat.name,
-          categoryId: cat.id,
-          color: cat.color,
-          icon: cat.icon,
-          budget: undefined
-        }));
-
-  // Sort quick pills by usage frequency (highest transaction count first)
-  const quickPills = [...rawPills].sort((a, b) => {
-    const freqA = getUsageFrequency(a.categoryId);
-    const freqB = getUsageFrequency(b.categoryId);
-    return freqB - freqA; // descending order
-  });
-
-  const handleQuickHomeExpense = (categoryId: string, name: string, budget?: Budget) => {
-    setQuickExpenseTarget({ categoryId, name, budget });
-    setQuickExpenseAmount('');
-    setQuickExpenseNotes('');
-    setQuickExpenseIsEmergency(false);
-
-    const activeCards = cards.filter(c => c.isActive);
-    const lastCardId = localStorage.getItem('finanlist_last_card_id');
-    const defaultCard = (lastCardId && activeCards.find(c => c.id === lastCardId)) || activeCards[0];
-
-    if (defaultCard) {
-      setQuickExpenseMethod('card');
-      setQuickExpenseCardId(defaultCard.id);
-    } else {
-      setQuickExpenseMethod('cash');
-      setQuickExpenseCardId('');
-    }
-
-    setShowQuickExpenseModal(true);
-  };
-
-  const handleCloseQuickExpenseModal = () => {
-    setQuickExpenseTarget(null);
-    setShowQuickExpenseModal(false);
-  };
-
-  const handleSaveQuickExpense = () => {
-    if (!quickExpenseTarget) return;
-
-    const amount = parseFloat(quickExpenseAmount);
-    if (isNaN(amount) || amount <= 0) {
-      alert('Por favor, ingresa un monto válido mayor a 0.');
-      return;
-    }
-
-    const activeCards = cards.filter(c => c.isActive);
-    const selectedCard = quickExpenseMethod === 'card' 
-      ? activeCards.find(c => c.id === quickExpenseCardId) || activeCards[0]
-      : undefined;
-
-    // Validación previa de límites y disponibilidad
-    const validation = FinancialEngine.validateTransaction(amount, quickExpenseMethod, selectedCard, summary, activeCards);
-    if (!validation.isValid) {
-      alert(validation.errorMessage || 'Transacción no permitida.');
-      return;
-    }
-
-    const now = new Date();
-    let categoryId = quickExpenseTarget.categoryId;
-    let noteText = quickExpenseNotes.trim();
-
-    if (quickExpenseIsEmergency) {
-      categoryId = 'cat_emergency';
-      const budget = quickExpenseTarget.budget;
-      const tag = budget ? (budget.categoryId ? `#budget_cat:${budget.categoryId}` : `#budget_id:${budget.id}`) : '';
-      noteText = noteText ? `${noteText} #contingency ${tag}` : `Imprevisto / Emergencia #contingency ${tag}`;
-    }
-
-    const catObj = categories.find(c => c.id === categoryId);
-
-    const resolvedAccount = quickExpenseMethod === 'card' && selectedCard ? selectedCard.name : 'Efectivo';
-    const resolvedCardId = quickExpenseMethod === 'card' && selectedCard ? selectedCard.id : undefined;
-
-    if (selectedCard) {
-      localStorage.setItem('finanlist_last_card_id', selectedCard.id);
-    }
-
-    addTransaction({
-      amount,
-      type: 'expense',
-      categoryId,
-      paymentMethod: quickExpenseMethod,
-      account: resolvedAccount,
-      cardId: resolvedCardId,
-      date: now.toISOString().split('T')[0],
-      time: now.toTimeString().split(' ')[0].slice(0, 5),
-      notes: noteText || `Gasto en ${quickExpenseTarget.name}`,
-      color: catObj?.color || 'var(--color-primary)',
-      icon: catObj?.icon || 'Coins'
-    });
-
-    handleCloseQuickExpenseModal();
-  };
-
-  // Recent transactions (Limit to 4)
-  const recentTransactions = transactions.slice(0, 4);
+  // Recent transactions (Top 5)
+  const recentTransactions = transactions.slice(0, 5);
 
   const handleDeleteTx = (id: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Avoid triggering edit sheet
@@ -337,15 +206,6 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
       deleteTransaction(id);
     }
   };
-
-  const activeCards = cards.filter(c => c.isActive);
-  const selectedQuickCard = quickExpenseMethod === 'card'
-    ? activeCards.find(c => c.id === quickExpenseCardId) || activeCards[0]
-    : undefined;
-  const parsedQuickAmt = parseFloat(quickExpenseAmount);
-  const quickValidation = !isNaN(parsedQuickAmt) && parsedQuickAmt > 0
-    ? FinancialEngine.validateTransaction(parsedQuickAmt, quickExpenseMethod, selectedQuickCard, summary, activeCards)
-    : { isValid: true };
 
   return (
     <div className="view-screen animate-fade-in">
@@ -694,66 +554,73 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         </button>
       </div>
 
-      {/* Quick Pills Widget */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px', marginBottom: '8px', width: '100%' }}>
-        <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Gasto Rápido Diario
-        </span>
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '8px', 
-          width: '100%'
-        }}>
-          {quickPills.map(pill => (
-            <button
-              key={pill.id}
-              onClick={() => handleQuickHomeExpense(pill.categoryId, pill.name, pill.budget)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 10px',
-                borderRadius: '12px',
-                border: '1px solid var(--border-color)',
-                backgroundColor: 'var(--bg-card)',
-                color: 'var(--text-primary)',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                width: '100%',
-                boxSizing: 'border-box',
-                textAlign: 'left',
-                justifyContent: 'flex-start',
-                overflow: 'hidden'
-              }}
-              className="pin-btn"
-            >
-              <span style={{ 
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '20px',
-                height: '20px',
-                borderRadius: '50%',
-                backgroundColor: pill.color,
-                color: 'white',
-                flexShrink: 0
-              }}>
-                <DynamicIcon name={pill.icon} size={11} color="white" />
-              </span>
-              <span style={{ 
-                fontSize: '11px', 
-                fontWeight: '600', 
-                whiteSpace: 'nowrap', 
-                overflow: 'hidden', 
-                textOverflow: 'ellipsis',
-                flex: 1
-              }}>
-                {pill.name}
-              </span>
-            </button>
-          ))}
+      {/* Recent Movements Section */}
+      <div>
+        <div style={styles.sectionTitleRow}>
+          <h3>Movimientos Recientes</h3>
+          <span 
+            onClick={() => setActiveTab('history')} 
+            style={{ ...styles.sectionTitleLink, cursor: 'pointer' }}
+          >
+            Ver todos
+          </span>
         </div>
+
+        {recentTransactions.length > 0 ? (
+          <div className="tx-list">
+            {recentTransactions.map((tx) => (
+              <div
+                key={tx.id}
+                className="tx-item"
+                onClick={() => onOpenTransactionModal(tx)}
+              >
+                <div style={{ ...styles.txIconWrapper, backgroundColor: tx.color }}>
+                  <DynamicIcon name={tx.icon} size={20} color="white" />
+                </div>
+                <div className="tx-details">
+                  <div className="tx-title">
+                    {(() => {
+                      const cat = categories.find(c => c.id === tx.categoryId);
+                      if (tx.notes) {
+                        const cleanNotes = tx.notes.replace(/#\w+(:[^\s]+)?/g, '').trim();
+                        if (cleanNotes) return cleanNotes;
+                      }
+                      return cat ? cat.name : tx.categoryId.replace('cat_', '').replace(/^\w/, c => c.toUpperCase());
+                    })()}
+                    {tx.favorite && (
+                      <span style={{ marginLeft: '6px' }}>
+                        <DynamicIcon name="Heart" size={12} color="#f43f5e" />
+                      </span>
+                    )}
+                  </div>
+                  <div className="tx-meta">
+                    <span>{tx.account}</span>
+                    <span>•</span>
+                    <span>{tx.date} {tx.time}</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div className={`tx-amount ${tx.type}`}>
+                    {tx.type === 'income' ? '+' : '-'}{formatVal(tx.amount)}
+                  </div>
+                  <button
+                    onClick={(e) => handleDeleteTx(tx.id, e)}
+                    style={styles.deleteTxBtn}
+                    title="Eliminar movimiento"
+                  >
+                    <DynamicIcon name="Trash2" size={14} color="var(--text-muted)" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state card">
+            <DynamicIcon name="Compass" size={32} className="empty-state-icon" />
+            <p>No hay transacciones registradas este mes.</p>
+            <p className="empty-state-quote">"El primer paso para ahorrar es saber en qué gastas."</p>
+          </div>
+        )}
       </div>
 
       {/* Budget Indicator Card */}
@@ -865,376 +732,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           💡 {weeklyReport.advice}
         </p>
       </div>
-
-      {/* Recent Movements Section */}
-      <div>
-        <div style={styles.sectionTitleRow}>
-          <h3>Movimientos Recientes</h3>
-          <span 
-            onClick={() => setActiveTab('history')} 
-            style={{ ...styles.sectionTitleLink, cursor: 'pointer' }}
-          >
-            Ver todos
-          </span>
-        </div>
-
-        {recentTransactions.length > 0 ? (
-          <div className="tx-list">
-            {recentTransactions.map((tx) => (
-              <div
-                key={tx.id}
-                className="tx-item"
-                onClick={() => onOpenTransactionModal(tx)}
-              >
-                <div style={{ ...styles.txIconWrapper, backgroundColor: tx.color }}>
-                  <DynamicIcon name={tx.icon} size={20} color="white" />
-                </div>
-                <div className="tx-details">
-                  <div className="tx-title">
-                    {(() => {
-                      const cat = categories.find(c => c.id === tx.categoryId);
-                      if (tx.notes) {
-                        const cleanNotes = tx.notes.replace(/#\w+(:[^\s]+)?/g, '').trim();
-                        if (cleanNotes) return cleanNotes;
-                      }
-                      return cat ? cat.name : tx.categoryId.replace('cat_', '').replace(/^\w/, c => c.toUpperCase());
-                    })()}
-                    {tx.favorite && (
-                      <span style={{ marginLeft: '6px' }}>
-                        <DynamicIcon name="Heart" size={12} color="#f43f5e" />
-                      </span>
-                    )}
-                  </div>
-                  <div className="tx-meta">
-                    <span>{tx.account}</span>
-                    <span>•</span>
-                    <span>{tx.date} {tx.time}</span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div className={`tx-amount ${tx.type}`}>
-                    {tx.type === 'income' ? '+' : '-'}{formatVal(tx.amount)}
-                  </div>
-                  <button
-                    onClick={(e) => handleDeleteTx(tx.id, e)}
-                    style={styles.deleteTxBtn}
-                    title="Eliminar movimiento"
-                  >
-                    <DynamicIcon name="Trash2" size={14} color="var(--text-muted)" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-state card">
-            <DynamicIcon name="Compass" size={32} className="empty-state-icon" />
-            <p>No hay transacciones registradas este mes.</p>
-            <p className="empty-state-quote">"El primer paso para ahorrar es saber en qué gastas."</p>
-          </div>
-        )}
       </div>
-      </div>
-
-      {/* QUICK EXPENSE BOTTOM SHEET MODAL */}
-      {showQuickExpenseModal && quickExpenseTarget && (
-        <div className="modal-overlay open" onClick={handleCloseQuickExpenseModal}>
-          <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Registrar Gasto Rápido</h3>
-              <button className="modal-close" onClick={handleCloseQuickExpenseModal}>
-                <DynamicIcon name="X" size={20} />
-              </button>
-            </div>
-            
-            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px', marginTop: '-8px' }}>
-              Concepto base: <strong>{quickExpenseTarget.name}</strong>
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Monto Gastado ({profile.currency})</label>
-              <input
-                type="number"
-                pattern="[0-9]*"
-                inputMode="decimal"
-                value={quickExpenseAmount}
-                onChange={(e) => setQuickExpenseAmount(e.target.value)}
-                className="input-field"
-                placeholder="0.00"
-                style={{ fontSize: '18px', fontWeight: '700' }}
-                autoFocus
-              />
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Concepto / Detalle (Opcional)</label>
-              <input
-                type="text"
-                value={quickExpenseNotes}
-                onChange={(e) => setQuickExpenseNotes(e.target.value)}
-                className="input-field"
-                placeholder={`Ej. McDonald's, Gasolina...`}
-              />
-            </div>
-
-            {/* Emergency Toggle (Only if target has budget with contingency fund) */}
-            {quickExpenseTarget.budget && quickExpenseTarget.budget.contingencyAmount && quickExpenseTarget.budget.contingencyAmount > 0 ? (
-              <div 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'space-between', 
-                  backgroundColor: 'var(--color-danger-light)', 
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                  borderRadius: '12px',
-                  padding: '12px',
-                  marginBottom: '16px',
-                  cursor: 'pointer'
-                }}
-                onClick={() => setQuickExpenseIsEmergency(!quickExpenseIsEmergency)}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <DynamicIcon name="AlertOctagon" size={20} color="var(--color-danger)" />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--color-danger)' }}>
-                      ¿Es un imprevisto / emergencia?
-                    </div>
-                    <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-                      Se restará del colchón de imprevistos.
-                    </div>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={quickExpenseIsEmergency}
-                  onChange={(e) => setQuickExpenseIsEmergency(e.target.checked)}
-                  onClick={(e) => e.stopPropagation()}
-                  style={{ width: '18px', height: '18px', accentColor: 'var(--color-danger)' }}
-                />
-              </div>
-            ) : null}
-
-            {/* Payment Method Selector (Efectivo vs Tarjeta) */}
-            <div className="input-group">
-              <label className="input-label">Medio de Pago</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
-                <button
-                  type="button"
-                  onClick={() => setQuickExpenseMethod('cash')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    padding: '12px',
-                    borderRadius: '12px',
-                    border: '1px solid',
-                    borderColor: quickExpenseMethod === 'cash' ? 'var(--color-primary)' : 'var(--border-color)',
-                    backgroundColor: quickExpenseMethod === 'cash' ? 'var(--color-primary-light)' : 'var(--bg-input)',
-                    color: quickExpenseMethod === 'cash' ? 'var(--color-primary)' : 'var(--text-primary)',
-                    fontWeight: '700',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <DynamicIcon name="Banknote" size={18} color={quickExpenseMethod === 'cash' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
-                  <span>Efectivo</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuickExpenseMethod('card');
-                    if (!quickExpenseCardId && activeCards.length > 0) {
-                      setQuickExpenseCardId(activeCards[0].id);
-                    }
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    padding: '12px',
-                    borderRadius: '12px',
-                    border: '1px solid',
-                    borderColor: quickExpenseMethod === 'card' ? 'var(--color-primary)' : 'var(--border-color)',
-                    backgroundColor: quickExpenseMethod === 'card' ? 'var(--color-primary-light)' : 'var(--bg-input)',
-                    color: quickExpenseMethod === 'card' ? 'var(--color-primary)' : 'var(--text-primary)',
-                    fontWeight: '700',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <DynamicIcon name="CreditCard" size={18} color={quickExpenseMethod === 'card' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
-                  <span>Tarjeta</span>
-                </button>
-              </div>
-            </div>
-
-            {/* If Cash: display current cash balance */}
-            {quickExpenseMethod === 'cash' && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '10px 14px',
-                borderRadius: '12px',
-                backgroundColor: 'var(--bg-card)',
-                border: '1px solid var(--border-color)',
-                fontSize: '12px'
-              }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Saldo en Efectivo disponible:</span>
-                <span style={{ fontWeight: '700', color: summary.cashBalance > 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                  {profile.currency}{summary.cashBalance.toLocaleString()}
-                </span>
-              </div>
-            )}
-
-            {/* If Card: dynamic card selector with limits */}
-            {quickExpenseMethod === 'card' && (
-              <div className="input-group">
-                <label className="input-label">Seleccionar Tarjeta</label>
-                {activeCards.length === 0 ? (
-                  <div style={{ padding: '12px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-danger)', borderRadius: '12px', fontSize: '12px' }}>
-                    No tienes tarjetas activas registradas. Selecciona Efectivo o registra una tarjeta en la pestaña de Tarjetas.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-                    {activeCards.map(c => {
-                      const isSelected = quickExpenseCardId === c.id || (!quickExpenseCardId && c.id === activeCards[0].id);
-                      const isCredit = c.type === 'credit';
-                      const capacity = isCredit 
-                        ? Math.max(0, (c.creditLimit || 0) - (c.balanceUsed || 0))
-                        : ((c.currentBalance || 0) + (c.allowOverdraft ? (c.overdraftLimit || 0) : 0));
-                      const capacityLabel = isCredit ? 'Cupo disponible' : 'Saldo disponible';
-
-                      return (
-                        <div
-                          key={c.id}
-                          onClick={() => setQuickExpenseCardId(c.id)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '10px 12px',
-                            borderRadius: '12px',
-                            border: '1px solid',
-                            borderColor: isSelected ? 'var(--color-primary)' : 'var(--border-color)',
-                            backgroundColor: isSelected ? 'var(--color-primary-light)' : 'var(--bg-card)',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: c.color || 'var(--color-primary)' }} />
-                            <div>
-                              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                                {c.name} {c.lastFourDigits ? `(••${c.lastFourDigits})` : ''}
-                              </div>
-                              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                {c.bank} • <span style={{ textTransform: 'capitalize' }}>{c.type === 'credit' ? 'Crédito' : 'Débito'}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '12px', fontWeight: '800', color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)' }}>
-                              {profile.currency}{capacity.toLocaleString()}
-                            </div>
-                            <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
-                              {capacityLabel}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Inline validation error & alternative card recommendations */}
-            {!quickValidation.isValid && (
-              <div style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: '12px',
-                padding: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-danger)', fontWeight: '700', fontSize: '12px' }}>
-                  <DynamicIcon name="AlertTriangle" size={16} />
-                  <span>{quickValidation.errorTitle}</span>
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
-                  {quickValidation.errorMessage}
-                </div>
-
-                {quickValidation.suggestedCards && quickValidation.suggestedCards.length > 0 && (
-                  <div style={{ marginTop: '4px', borderTop: '1px solid rgba(239, 68, 68, 0.2)', paddingTop: '6px' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                      Tarjetas con capacidad suficiente:
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {quickValidation.suggestedCards.map(sug => (
-                        <button
-                          key={sug.id}
-                          type="button"
-                          onClick={() => {
-                            setQuickExpenseMethod('card');
-                            setQuickExpenseCardId(sug.id);
-                          }}
-                          style={{
-                            fontSize: '11px',
-                            padding: '4px 8px',
-                            borderRadius: '8px',
-                            backgroundColor: 'var(--bg-card)',
-                            border: '1px solid var(--border-color)',
-                            color: 'var(--color-primary)',
-                            fontWeight: '600',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          👉 Usar {sug.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Action buttons */}
-            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-              <button 
-                type="button" 
-                className="btn btn-secondary" 
-                onClick={handleCloseQuickExpenseModal}
-                style={{ flex: 1 }}
-              >
-                Cancelar
-              </button>
-              <button 
-                type="button" 
-                className="btn btn-primary" 
-                disabled={!quickValidation.isValid}
-                onClick={handleSaveQuickExpense}
-                style={{ 
-                  flex: 1, 
-                  opacity: !quickValidation.isValid ? 0.5 : 1, 
-                  cursor: !quickValidation.isValid ? 'not-allowed' : 'pointer' 
-                }}
-              >
-                Registrar Gasto
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Notification Center Portal Modal */}
       <NotificationCenter
