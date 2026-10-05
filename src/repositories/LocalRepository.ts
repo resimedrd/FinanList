@@ -1,4 +1,4 @@
-import { Category, Transaction, Budget, SavingGoal, UserProfile, RecurringTransaction, Debt, PaymentCard, FinancialNotification } from '../models/types';
+import { Category, Transaction, Budget, SavingGoal, UserProfile, RecurringTransaction, Debt, PaymentCard, FinancialNotification, BudgetDistributionTargets } from '../models/types';
 import { CategoryDetector } from '../services/CategoryDetector';
 
 // Key names for localStorage
@@ -12,6 +12,7 @@ const KEYS = {
   DEBTS: 'finanlist_debts',
   CARDS: 'finanlist_cards',
   NOTIFICATIONS: 'finanlist_notifications',
+  DISTRIBUTION_TARGETS: 'finanlist_distribution_targets',
 };
 
 const DEFAULT_CARDS: PaymentCard[] = [
@@ -478,6 +479,40 @@ export class LocalRepository {
 
   static saveProfile(profile: UserProfile) {
     localStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
+  }
+
+  // --- Budget Distribution Targets (Mi Fórmula) ---
+  static getDistributionTargets(): BudgetDistributionTargets {
+    this.init();
+    const data = localStorage.getItem(KEYS.DISTRIBUTION_TARGETS);
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (typeof parsed.needs === 'number' && typeof parsed.wants === 'number' && typeof parsed.savings === 'number') {
+          return parsed;
+        }
+      } catch (e) {
+        // fallback
+      }
+    }
+    const profile = this.getProfile();
+    if (profile.budgetDistribution) {
+      return profile.budgetDistribution;
+    }
+    return { needs: 50, wants: 30, savings: 20 };
+  }
+
+  static saveDistributionTargets(targets: BudgetDistributionTargets) {
+    localStorage.setItem(KEYS.DISTRIBUTION_TARGETS, JSON.stringify(targets));
+    try {
+      const profile = this.getProfile();
+      if (profile) {
+        profile.budgetDistribution = targets;
+        this.saveProfile(profile);
+      }
+    } catch (e) {
+      console.warn('Error saving distribution targets to profile:', e);
+    }
   }
 
   // --- Recurring Transactions ---

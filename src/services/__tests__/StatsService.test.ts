@@ -178,4 +178,79 @@ describe('StatsService', () => {
     // Net worth remains 15,000 - 45,000 = -30,000
     expect(summary.consolidatedNetBalance).toBe(-30000);
   });
+
+  describe('calculateCustomDistribution (Mi Fórmula)', () => {
+    const currentYM = today.substring(0, 7);
+
+    it('correctly calculates 50/30/20 distribution and aligns with targets', () => {
+      const txs: Transaction[] = [
+        { id: 't_inc', amount: 10000, type: 'income', categoryId: 'cat_sal', date: today, time: '09:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_need', amount: 5000, type: 'expense', categoryId: 'cat_food_super', date: today, time: '10:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_want', amount: 3000, type: 'expense', categoryId: 'cat_food_out', date: today, time: '12:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_save', amount: 2000, type: 'expense', categoryId: 'cat_saving', date: today, time: '14:00', color: '', icon: '', account: 'Efectivo' }
+      ];
+
+      const res = StatsService.calculateCustomDistribution(txs, [], { needs: 50, wants: 30, savings: 20 }, currentYM);
+      expect(res.needsPct).toBe(50);
+      expect(res.wantsPct).toBe(30);
+      expect(res.savingsPct).toBe(20);
+      expect(res.score).toBe(100);
+      expect(res.status).toBe('Fórmula Alineada');
+      expect(res.differences.needsDiff).toBe(0);
+      expect(res.differences.wantsDiff).toBe(0);
+      expect(res.differences.savingsDiff).toBe(0);
+    });
+
+    it('evaluates 70/20/10 template without false Ahorro Insuficiente alert', () => {
+      // User with high fixed costs: 70% needs, 20% wants, 10% savings
+      const txs: Transaction[] = [
+        { id: 't_inc', amount: 10000, type: 'income', categoryId: 'cat_sal', date: today, time: '09:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_need', amount: 7000, type: 'expense', categoryId: 'cat_food_super', date: today, time: '10:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_want', amount: 2000, type: 'expense', categoryId: 'cat_food_out', date: today, time: '12:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_save', amount: 1000, type: 'expense', categoryId: 'cat_saving', date: today, time: '14:00', color: '', icon: '', account: 'Efectivo' }
+      ];
+
+      const res = StatsService.calculateCustomDistribution(txs, [], { needs: 70, wants: 20, savings: 10 }, currentYM);
+      expect(res.needsPct).toBe(70);
+      expect(res.wantsPct).toBe(20);
+      expect(res.savingsPct).toBe(10);
+      expect(res.score).toBe(100);
+      expect(res.status).toBe('Fórmula Alineada');
+      // Must not falsely warn about missing the universal 20%
+      expect(res.status).not.toContain('Ahorro Insuficiente');
+      expect(res.recommendation).toContain('perfectamente alineados');
+    });
+
+    it('evaluates 80/0/20 template and allows 0% target for wants', () => {
+      const txs: Transaction[] = [
+        { id: 't_inc', amount: 10000, type: 'income', categoryId: 'cat_sal', date: today, time: '09:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_need', amount: 8000, type: 'expense', categoryId: 'cat_food_super', date: today, time: '10:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_save', amount: 2000, type: 'expense', categoryId: 'cat_saving', date: today, time: '14:00', color: '', icon: '', account: 'Efectivo' }
+      ];
+
+      const res = StatsService.calculateCustomDistribution(txs, [], { needs: 80, wants: 0, savings: 20 }, currentYM);
+      expect(res.needsPct).toBe(80);
+      expect(res.wantsPct).toBe(0);
+      expect(res.savingsPct).toBe(20);
+      expect(res.score).toBe(100);
+      expect(res.status).toBe('Fórmula Alineada');
+    });
+
+    it('detects deviations relative to user-defined targets and adjusts score and recommendation', () => {
+      // User set 50/30/20, but spent 70% in needs and only 5% in savings
+      const txs: Transaction[] = [
+        { id: 't_inc', amount: 10000, type: 'income', categoryId: 'cat_sal', date: today, time: '09:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_need', amount: 7000, type: 'expense', categoryId: 'cat_food_super', date: today, time: '10:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_want', amount: 2500, type: 'expense', categoryId: 'cat_food_out', date: today, time: '12:00', color: '', icon: '', account: 'Efectivo' },
+        { id: 't_save', amount: 500, type: 'expense', categoryId: 'cat_saving', date: today, time: '14:00', color: '', icon: '', account: 'Efectivo' }
+      ];
+
+      const res = StatsService.calculateCustomDistribution(txs, [], { needs: 50, wants: 30, savings: 20 }, currentYM);
+      expect(res.needsPct).toBe(70);
+      expect(res.differences.needsDiff).toBe(20);
+      expect(res.score).toBeLessThan(100);
+      expect(res.status).toBe('Necesidades Elevadas');
+      expect(res.recommendation).toContain('superan tu objetivo del 50%');
+    });
+  });
 });

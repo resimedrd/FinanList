@@ -122,6 +122,34 @@ export interface InvestmentMove {
   notes?: string;
 }
 
+export interface BudgetDistributionTargets {
+  needs: number;    // % (0-100)
+  wants: number;    // % (0-100)
+  savings: number;  // % (0-100)
+}
+
+export interface CustomDistributionResult {
+  needs: number;
+  wants: number;
+  savings: number;
+  needsPct: number;
+  wantsPct: number;
+  savingsPct: number;
+  targetNeeds: number;
+  targetWants: number;
+  targetSavings: number;
+  totalSpent: number;
+  totalIncome: number;
+  score: number;
+  status: string;
+  recommendation: string;
+  differences: {
+    needsDiff: number;    // needsPct - targetNeeds
+    wantsDiff: number;    // wantsPct - targetWants
+    savingsDiff: number;  // savingsPct - targetSavings
+  };
+}
+
 export interface UserProfile {
   name: string;
   username?: string;    // Custom login username
@@ -134,6 +162,7 @@ export interface UserProfile {
   pinCode?: string;      // PIN for app security lock
   biometricsEnabled?: boolean;
   stealthModeEnabled?: boolean;
+  budgetDistribution?: BudgetDistributionTargets;
 }
 
 export interface FinancialSummary {

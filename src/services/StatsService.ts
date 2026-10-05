@@ -1,4 +1,4 @@
-import { Transaction, Budget, PaymentCard, Debt } from '../models/types';
+import { Transaction, Budget, PaymentCard, Debt, Category, BudgetDistributionTargets, CustomDistributionResult } from '../models/types';
 import { parseLocalDate, getDaysInMonth } from '../utils/dateUtils';
 import { FinancialEngine } from './FinancialEngine';
 
@@ -79,6 +79,148 @@ export class StatsService {
       investmentsBalance: summary.investmentsBalance,
       totalReceivables: summary.totalReceivables,
       totalOwedDebts: summary.totalOwedDebts
+    };
+  }
+
+  /**
+   * Calcula la distribución de gastos del mes frente a la fórmula personalizada del usuario.
+   * Evalúa score, estado y recomendaciones exclusivamente respecto a los objetivos configurados.
+   */
+  static calculateCustomDistribution(
+    transactions: Transaction[],
+    categories: Category[] = [],
+    targets: BudgetDistributionTargets = { needs: 50, wants: 30, savings: 20 },
+    currentYM?: string
+  ): CustomDistributionResult {
+    const ym = currentYM || this.getCurrentYearMonth();
+    const monthlyTxs = transactions.filter(t => t.date && t.date.substring(0, 7) === ym);
+
+    const totalIncome = monthlyTxs
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    let needs = 0;
+    let wants = 0;
+    let savings = 0;
+
+    monthlyTxs.forEach(t => {
+      if (t.type === 'expense') {
+        const catId = t.categoryId || '';
+        const catObj = categories.find(c => c.id === catId);
+        const parentId = catObj?.parentId || '';
+        const catNameLower = (catObj?.name || '').toLowerCase();
+
+        // 1. Ahorro / Inversión
+        if (
+          catId === 'cat_saving' ||
+          catId === 'cat_inv' ||
+          t.notes?.includes('#goal:') ||
+          catNameLower.includes('ahorro') ||
+          catNameLower.includes('inversi')
+        ) {
+          savings += t.amount;
+        }
+        // 2. Necesidades básicas
+        else if (
+          catId === 'cat_food_super' ||
+          catId === 'cat_bills' ||
+          catId === 'cat_trans' ||
+          catId === 'cat_health' ||
+          catId === 'cat_emergency' ||
+          parentId === 'cat_trans' ||
+          catNameLower.includes('supermercado') ||
+          catNameLower.includes('comida') ||
+          catNameLower.includes('servicio') ||
+          catNameLower.includes('transporte') ||
+          catNameLower.includes('gasolina') ||
+          catNameLower.includes('salud') ||
+          catNameLower.includes('farmacia') ||
+          catNameLower.includes('alquiler') ||
+          catNameLower.includes('renta') ||
+          catNameLower.includes('luz') ||
+          catNameLower.includes('agua') ||
+          catNameLower.includes('internet')
+        ) {
+          needs += t.amount;
+        }
+        // 3. Deseos y gastos discrecionales
+        else {
+          wants += t.amount;
+        }
+      }
+    });
+
+    const totalSpent = needs + wants + savings;
+    const baseBudget = totalIncome > 0 ? totalIncome : totalSpent;
+    const needsPct = baseBudget > 0 ? (needs / baseBudget) * 100 : 0;
+    const wantsPct = baseBudget > 0 ? (wants / baseBudget) * 100 : 0;
+    const savingsPct = baseBudget > 0 ? (savings / baseBudget) * 100 : 0;
+
+    const targetNeeds = targets.needs;
+    const targetWants = targets.wants;
+    const targetSavings = targets.savings;
+
+    const needsDiff = needsPct - targetNeeds;
+    const wantsDiff = wantsPct - targetWants;
+    const savingsDiff = savingsPct - targetSavings;
+
+    let score = 100;
+    let status = 'Fórmula Alineada';
+    let recommendation = '¡Felicidades! Tus gastos están perfectamente alineados con los objetivos de tu fórmula personalizada.';
+
+    const alerts: string[] = [];
+
+    // Evaluación relativa al objetivo del usuario:
+    if (needsPct > targetNeeds + 5) {
+      score -= (needsPct - targetNeeds) * 1.5;
+      status = 'Necesidades Elevadas';
+      alerts.push(`Tus gastos fijos y necesidades (${needsPct.toFixed(0)}%) superan tu objetivo del ${targetNeeds}%.`);
+    }
+
+    if (wantsPct > targetWants + 5) {
+      score -= (wantsPct - targetWants) * 2;
+      status = status === 'Fórmula Alineada' ? 'Exceso en Deseos' : `${status} y Deseos`;
+      alerts.push(`Estás destinando el ${wantsPct.toFixed(0)}% a deseos (meta: ${targetWants}%).`);
+    }
+
+    // Ahorro e Inversión: evaluado exclusivamente contra el objetivo del usuario
+    if (targetSavings > 0) {
+      const minAcceptableSavings = targetSavings * 0.75;
+      if (savingsPct < minAcceptableSavings) {
+        score -= (targetSavings - savingsPct) * 2.5;
+        if (status === 'Fórmula Alineada') {
+          status = 'Ahorro por Debajo del Objetivo';
+        }
+        alerts.push(`Tu tasa de ahorro (${savingsPct.toFixed(0)}%) está por debajo de tu meta del ${targetSavings}%.`);
+      }
+    }
+
+    if (alerts.length > 0) {
+      recommendation = alerts.join(' ');
+    }
+
+    score = Math.max(10, Math.min(100, Math.round(score)));
+
+    return {
+      needs: Math.round(needs * 100) / 100,
+      wants: Math.round(wants * 100) / 100,
+      savings: Math.round(savings * 100) / 100,
+      needsPct,
+      wantsPct,
+      savingsPct,
+      targetNeeds,
+      targetWants,
+      targetSavings,
+      totalSpent: Math.round(totalSpent * 100) / 100,
+      totalIncome: Math.round(totalIncome * 100) / 100,
+      score,
+      status,
+      recommendation,
+      differences: {
+        needsDiff: Math.round(needsDiff * 10) / 10,
+        wantsDiff: Math.round(wantsDiff * 10) / 10,
+        savingsDiff: Math.round(savingsDiff * 10) / 10
+      }
     };
   }
 

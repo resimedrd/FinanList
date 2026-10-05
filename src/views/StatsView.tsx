@@ -1,13 +1,56 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { StatsService } from '../services/StatsService';
+import { LocalRepository } from '../repositories/LocalRepository';
+import { BudgetDistributionTargets } from '../models/types';
 import { IncomeExpenseBarChart, CashFlowLineChart } from '../components/FinancialCharts';
 import { DynamicIcon } from '../components/DynamicIcon';
 
 export const StatsView: React.FC = () => {
-  const { transactions, budgets, profile, stealthMode, setStealthMode, goals, debts, categories } = useApp();
+  const { transactions, budgets, profile, stealthMode, setStealthMode, goals, debts, categories, updateProfile } = useApp();
 
   const [activeTab, setActiveTab] = useState<'rule' | 'comparison' | 'flow'>('rule');
+
+  // Distribution Targets (Mi Fórmula)
+  const [distributionTargets, setDistributionTargets] = useState<BudgetDistributionTargets>(() => {
+    return profile.budgetDistribution || LocalRepository.getDistributionTargets();
+  });
+  const [inputNeeds, setInputNeeds] = useState<string>(distributionTargets.needs.toString());
+  const [inputWants, setInputWants] = useState<string>(distributionTargets.wants.toString());
+  const [inputSavings, setInputSavings] = useState<string>(distributionTargets.savings.toString());
+  const [showConfig, setShowConfig] = useState<boolean>(false);
+
+  const applyTemplate = (needs: number, wants: number, savings: number) => {
+    const newTargets: BudgetDistributionTargets = { needs, wants, savings };
+    setInputNeeds(needs.toString());
+    setInputWants(wants.toString());
+    setInputSavings(savings.toString());
+    setDistributionTargets(newTargets);
+    LocalRepository.saveDistributionTargets(newTargets);
+    if (updateProfile) {
+      updateProfile({ ...profile, budgetDistribution: newTargets });
+    }
+  };
+
+  const handleInputChange = (field: 'needs' | 'wants' | 'savings', value: string) => {
+    const cleanVal = value.replace(/\D/g, '').slice(0, 3);
+    const n = field === 'needs' ? (parseInt(cleanVal, 10) || 0) : (parseInt(inputNeeds, 10) || 0);
+    const w = field === 'wants' ? (parseInt(cleanVal, 10) || 0) : (parseInt(inputWants, 10) || 0);
+    const s = field === 'savings' ? (parseInt(cleanVal, 10) || 0) : (parseInt(inputSavings, 10) || 0);
+
+    if (field === 'needs') setInputNeeds(cleanVal);
+    if (field === 'wants') setInputWants(cleanVal);
+    if (field === 'savings') setInputSavings(cleanVal);
+
+    if (n + w + s === 100) {
+      const validTargets: BudgetDistributionTargets = { needs: n, wants: w, savings: s };
+      setDistributionTargets(validTargets);
+      LocalRepository.saveDistributionTargets(validTargets);
+      if (updateProfile) {
+        updateProfile({ ...profile, budgetDistribution: validTargets });
+      }
+    }
+  };
 
   // Calculations (Month level)
   const chartData = StatsService.getExpenseByCategory(transactions);
@@ -16,110 +59,8 @@ export const StatsView: React.FC = () => {
   const cashFlowTrend = StatsService.getCashFlowTrends(transactions);
   const insights = StatsService.getFinancialInsights(transactions, budgets, profile.currency);
 
-  // 50/30/20 Rule Calculator (Calculado sobre el mes actual para métricas representativas)
-  const getBudgetRuleBreakdown = () => {
-    const currentYM = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-    const monthlyTxs = transactions.filter(t => t.date && t.date.substring(0, 7) === currentYM);
-
-    const totalIncome = monthlyTxs
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    let needs = 0;
-    let wants = 0;
-    let savings = 0;
-
-    monthlyTxs.forEach(t => {
-      if (t.type === 'expense') {
-        const catId = t.categoryId || '';
-        const catObj = categories.find(c => c.id === catId);
-        const parentId = catObj?.parentId || '';
-        const catNameLower = (catObj?.name || '').toLowerCase();
-
-        // 1. Ahorro / Inversión (20%)
-        if (
-          catId === 'cat_saving' ||
-          catId === 'cat_inv' ||
-          t.notes?.includes('#goal:') ||
-          catNameLower.includes('ahorro') ||
-          catNameLower.includes('inversi')
-        ) {
-          savings += t.amount;
-        }
-        // 2. Necesidades básicas (50%)
-        else if (
-          catId === 'cat_food_super' ||
-          catId === 'cat_bills' ||
-          catId === 'cat_trans' ||
-          catId === 'cat_health' ||
-          catId === 'cat_emergency' ||
-          parentId === 'cat_trans' ||
-          catNameLower.includes('supermercado') ||
-          catNameLower.includes('comida') ||
-          catNameLower.includes('servicio') ||
-          catNameLower.includes('transporte') ||
-          catNameLower.includes('gasolina') ||
-          catNameLower.includes('salud') ||
-          catNameLower.includes('farmacia') ||
-          catNameLower.includes('alquiler') ||
-          catNameLower.includes('renta') ||
-          catNameLower.includes('luz') ||
-          catNameLower.includes('agua') ||
-          catNameLower.includes('internet')
-        ) {
-          needs += t.amount;
-        }
-        // 3. Deseos y gastos discrecionales (30%)
-        else {
-          wants += t.amount;
-        }
-      }
-    });
-
-    const totalSpent = needs + wants + savings;
-    const baseBudget = totalIncome > 0 ? totalIncome : totalSpent;
-    const needsPct = baseBudget > 0 ? (needs / baseBudget) * 100 : 0;
-    const wantsPct = baseBudget > 0 ? (wants / baseBudget) * 100 : 0;
-    const savingsPct = baseBudget > 0 ? (savings / baseBudget) * 100 : 0;
-
-    let score = 100;
-    let status = 'Distribución Excelente';
-    let recommendation = '¡Felicidades! Estás siguiendo la regla de oro del presupuesto casi a la perfección.';
-
-    if (needsPct > 55) {
-      score -= (needsPct - 50) * 1.5;
-      status = 'Necesidades Elevadas';
-      recommendation = 'Tus gastos fijos y necesidades superan el 50%. Intenta revisar contratos de servicios o buscar formas de abaratar tu costo de vida mensual.';
-    }
-    if (wantsPct > 35) {
-      score -= (wantsPct - 30) * 2;
-      status = 'Exceso en Deseos';
-      recommendation = 'Estás destinando más del 30% a entretenimiento y extras. Intenta recortar salidas a comer o compras no esenciales.';
-    }
-    if (savingsPct < 15) {
-      score -= (20 - savingsPct) * 2.5;
-      if (status === 'Distribución Excelente') status = 'Ahorro Insuficiente';
-      recommendation = 'Tu tasa de ahorro/inversión está por debajo del 20% recomendado. Intenta pagarte a ti mismo primero al recibir tus ingresos.';
-    }
-
-    score = Math.max(10, Math.min(100, Math.round(score)));
-
-    return {
-      needs: Math.round(needs * 100) / 100,
-      wants: Math.round(wants * 100) / 100,
-      savings: Math.round(savings * 100) / 100,
-      needsPct,
-      wantsPct,
-      savingsPct,
-      totalSpent: Math.round(totalSpent * 100) / 100,
-      totalIncome: Math.round(totalIncome * 100) / 100,
-      score,
-      status,
-      recommendation
-    };
-  };
-
-  const rule = getBudgetRuleBreakdown();
+  // Evaluación relativa frente a los objetivos de Mi Fórmula
+  const rule = StatsService.calculateCustomDistribution(transactions, categories, distributionTargets);
 
   const getPrevMonthYM = () => {
     const now = new Date();
@@ -213,7 +154,7 @@ export const StatsView: React.FC = () => {
             }}
           >
             <DynamicIcon name="Sliders" size={14} />
-            <span style={{ marginLeft: '4px' }}>Fórmula 50/30/20</span>
+            <span style={{ marginLeft: '4px' }}>Mi Fórmula</span>
           </button>
           <button
             onClick={() => setActiveTab('comparison')}
@@ -250,10 +191,198 @@ export const StatsView: React.FC = () => {
         <div className="card" style={styles.chartCard}>
         {activeTab === 'rule' && (
           <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h4 style={styles.chartTitle}>Fórmula de Presupuesto 50/30/20</h4>
-            <p style={{ ...styles.chartSubtitle, marginTop: '-6px' }}>
-              Evalúa cómo distribuyes tus gastos frente al estándar ideal de finanzas personales.
-            </p>
+            <div>
+              <h4 style={styles.chartTitle}>Mi Fórmula de Presupuesto</h4>
+              <p style={{ ...styles.chartSubtitle, marginTop: '-6px' }}>
+                Personaliza tus porcentajes ideales y evalúa tus gastos reales contra tu propia fórmula financiera.
+              </p>
+            </div>
+
+            {/* Quick Templates & Customize Toggle */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)' }}>Plantillas:</span>
+                <button
+                  type="button"
+                  onClick={() => applyTemplate(50, 30, 20)}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '20px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    backgroundColor: distributionTargets.needs === 50 && distributionTargets.wants === 30 && distributionTargets.savings === 20
+                      ? 'var(--color-primary)'
+                      : 'var(--bg-input)',
+                    color: distributionTargets.needs === 50 && distributionTargets.wants === 30 && distributionTargets.savings === 20
+                      ? '#ffffff'
+                      : 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  50/30/20 (Equilibrado)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyTemplate(70, 20, 10)}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '20px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    backgroundColor: distributionTargets.needs === 70 && distributionTargets.wants === 20 && distributionTargets.savings === 10
+                      ? 'var(--color-primary)'
+                      : 'var(--bg-input)',
+                    color: distributionTargets.needs === 70 && distributionTargets.wants === 20 && distributionTargets.savings === 10
+                      ? '#ffffff'
+                      : 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  70/20/10 (Costo alto)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyTemplate(80, 0, 20)}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '20px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    backgroundColor: distributionTargets.needs === 80 && distributionTargets.wants === 0 && distributionTargets.savings === 20
+                      ? 'var(--color-primary)'
+                      : 'var(--bg-input)',
+                    color: distributionTargets.needs === 80 && distributionTargets.wants === 0 && distributionTargets.savings === 20
+                      ? '#ffffff'
+                      : 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  80/0/20 (Ahorro simple)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowConfig(!showConfig)}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '20px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    backgroundColor: showConfig ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-input)',
+                    color: showConfig ? 'var(--color-primary)' : 'var(--text-secondary)',
+                    border: '1px dashed var(--border-color)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <DynamicIcon name="Sliders" size={12} />
+                  <span>{showConfig ? 'Ocultar ajuste' : 'Personalizar %'}</span>
+                </button>
+              </div>
+
+              {/* Collapsible / Interactive Custom Target Inputs with Live Validation */}
+              {showConfig && (
+                <div style={{
+                  backgroundColor: 'var(--bg-phone)',
+                  borderRadius: '12px',
+                  padding: '12px',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  {(() => {
+                    const n = parseInt(inputNeeds, 10) || 0;
+                    const w = parseInt(inputWants, 10) || 0;
+                    const s = parseInt(inputSavings, 10) || 0;
+                    const totalSum = n + w + s;
+                    const isValidSum = totalSum === 100;
+
+                    return (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                          <span style={{ fontWeight: '700', color: 'var(--text-primary)' }}>Configura tus 3 porcentajes objetivo:</span>
+                          <span style={{
+                            fontWeight: '700',
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            backgroundColor: isValidSum ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                            color: isValidSum ? '#10b981' : '#ef4444'
+                          }}>
+                            {isValidSum ? '✓ Suma 100%' : `Suma: ${totalSum}% (${totalSum < 100 ? `faltan ${100 - totalSum}%` : `excede ${totalSum - 100}%`})`}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                          <div>
+                            <label style={{ fontSize: '10px', fontWeight: '700', color: '#3b82f6', display: 'block', marginBottom: '4px' }}>
+                              Necesidades %
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={inputNeeds}
+                              onChange={(e) => handleInputChange('needs', e.target.value)}
+                              className="input-field"
+                              style={{ padding: '6px 8px', fontSize: '13px', fontWeight: '700', textAlign: 'center' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '10px', fontWeight: '700', color: '#f59e0b', display: 'block', marginBottom: '4px' }}>
+                              Deseos %
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={inputWants}
+                              onChange={(e) => handleInputChange('wants', e.target.value)}
+                              className="input-field"
+                              style={{ padding: '6px 8px', fontSize: '13px', fontWeight: '700', textAlign: 'center' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '10px', fontWeight: '700', color: '#10b981', display: 'block', marginBottom: '4px' }}>
+                              Ahorro e Inv. %
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={inputSavings}
+                              onChange={(e) => handleInputChange('savings', e.target.value)}
+                              className="input-field"
+                              style={{ padding: '6px 8px', fontSize: '13px', fontWeight: '700', textAlign: 'center' }}
+                            />
+                          </div>
+                        </div>
+
+                        {!isValidSum && (
+                          <div style={{
+                            fontSize: '11px',
+                            color: '#ef4444',
+                            backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                            padding: '6px 10px',
+                            borderRadius: '8px',
+                            fontWeight: '600'
+                          }}>
+                            ⚠️ Para aplicar la nueva fórmula, la suma de los tres objetivos debe ser exactamente 100% (actual: {totalSum}%).
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
 
             {/* Stacked Progress Bar */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
@@ -274,10 +403,10 @@ export const StatsView: React.FC = () => {
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)', padding: '0 4px' }}>
-                <span>Necesidades (Ideal 50%)</span>
-                <span>Deseos (Ideal 30%)</span>
-                <span>Ahorros/Inversión (Ideal 20%)</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)', padding: '0 4px', flexWrap: 'wrap', gap: '4px' }}>
+                <span style={{ color: '#3b82f6', fontWeight: '600' }}>Necesidades (Meta {rule.targetNeeds}%)</span>
+                <span style={{ color: '#f59e0b', fontWeight: '600' }}>Deseos (Meta {rule.targetWants}%)</span>
+                <span style={{ color: '#10b981', fontWeight: '600' }}>Ahorro/Inv. (Meta {rule.targetSavings}%)</span>
               </div>
             </div>
 
@@ -293,7 +422,12 @@ export const StatsView: React.FC = () => {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-primary)' }}>{formatVal(rule.needs)}</div>
-                  <div style={{ fontSize: '10px', color: '#3b82f6', fontWeight: '700' }}>{rule.needsPct.toFixed(0)}% de tus gastos</div>
+                  <div style={{ fontSize: '10px', color: '#3b82f6', fontWeight: '700' }}>
+                    {rule.needsPct.toFixed(0)}% de gastos (Meta: {rule.targetNeeds}%)
+                  </div>
+                  <div style={{ fontSize: '9px', fontWeight: '600', color: rule.differences.needsDiff > 5 ? '#ef4444' : 'var(--text-secondary)' }}>
+                    {rule.differences.needsDiff > 0 ? `+${rule.differences.needsDiff.toFixed(0)}% sobre meta` : `${Math.abs(rule.differences.needsDiff).toFixed(0)}% bajo meta`}
+                  </div>
                 </div>
               </div>
 
@@ -307,7 +441,12 @@ export const StatsView: React.FC = () => {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-primary)' }}>{formatVal(rule.wants)}</div>
-                  <div style={{ fontSize: '10px', color: '#f59e0b', fontWeight: '700' }}>{rule.wantsPct.toFixed(0)}% de tus gastos</div>
+                  <div style={{ fontSize: '10px', color: '#f59e0b', fontWeight: '700' }}>
+                    {rule.wantsPct.toFixed(0)}% de gastos (Meta: {rule.targetWants}%)
+                  </div>
+                  <div style={{ fontSize: '9px', fontWeight: '600', color: rule.differences.wantsDiff > 5 ? '#ef4444' : 'var(--text-secondary)' }}>
+                    {rule.differences.wantsDiff > 0 ? `+${rule.differences.wantsDiff.toFixed(0)}% sobre meta` : `${Math.abs(rule.differences.wantsDiff).toFixed(0)}% bajo meta`}
+                  </div>
                 </div>
               </div>
 
@@ -321,7 +460,12 @@ export const StatsView: React.FC = () => {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-primary)' }}>{formatVal(rule.savings)}</div>
-                  <div style={{ fontSize: '10px', color: '#10b981', fontWeight: '700' }}>{rule.savingsPct.toFixed(0)}% de tus gastos</div>
+                  <div style={{ fontSize: '10px', color: '#10b981', fontWeight: '700' }}>
+                    {rule.savingsPct.toFixed(0)}% de gastos (Meta: {rule.targetSavings}%)
+                  </div>
+                  <div style={{ fontSize: '9px', fontWeight: '600', color: rule.differences.savingsDiff >= 0 ? '#10b981' : '#f59e0b' }}>
+                    {rule.differences.savingsDiff >= 0 ? `+${rule.differences.savingsDiff.toFixed(0)}% sobre meta` : `${Math.abs(rule.differences.savingsDiff).toFixed(0)}% por debajo`}
+                  </div>
                 </div>
               </div>
             </div>
