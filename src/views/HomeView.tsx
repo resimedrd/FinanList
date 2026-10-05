@@ -386,113 +386,221 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
       {/* Hero Balance Card */}
       <div className="card" style={styles.balanceHero}>
         <div style={styles.balanceHeader}>
-          <span>Saldo Actual</span>
-          {summary.consolidatedNetBalance !== summary.availableCash ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>Dinero Disponible</span>
+            <button
+              type="button"
+              onClick={() => setStealthMode(!stealthMode)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '2px',
+                cursor: 'pointer',
+                color: 'var(--text-muted)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '6px'
+              }}
+              title={stealthMode ? 'Mostrar montos' : 'Ocultar montos'}
+              aria-label={stealthMode ? 'Mostrar montos' : 'Ocultar montos'}
+            >
+              <DynamicIcon name={stealthMode ? 'EyeOff' : 'Eye'} size={15} />
+            </button>
+          </div>
+          {summary.consolidatedNetBalance !== summary.availableCash && (
             <span 
-              style={{ fontSize: '11px', fontWeight: '500', color: 'var(--text-muted)' }} 
+              style={{ fontSize: '11px', fontWeight: '500', color: 'var(--text-muted)', textTransform: 'none' }} 
               title="Patrimonio neto total: Activos menos Deudas"
             >
               Patrimonio: {formatVal(summary.consolidatedNetBalance)}
             </span>
-          ) : (
-            <span style={{ fontSize: '11px', fontWeight: '500', color: 'var(--text-muted)' }}>
-              Dinero Disponible
-            </span>
           )}
         </div>
+
         <div style={styles.balanceValue}>{renderHierarchicalBalance(summary.availableCash)}</div>
 
-        {/* Desglose de dinero disponible y estado de deudas independientes */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '-4px', marginBottom: '6px' }}>
-          <span style={styles.availableBadge} title="Dinero en efectivo físico disponible">
-            💵 Efectivo: {formatAccountVal(summary.cashBalance)}
-          </span>
-          <span style={styles.availableBadge} title="Saldo disponible en tarjetas de débito">
-            💳 Débito: {formatAccountVal(summary.debitCardsBalance ?? summary.bankBalance)}
-          </span>
-          {summary.totalCreditAvailable > 0 && (
-            <span style={styles.availableBadge} title="Crédito disponible para gastar en tarjetas de crédito">
-              💳 Crédito Disp: {formatAccountVal(summary.totalCreditAvailable)}
-            </span>
-          )}
-          {summary.investmentsBalance > 0 && (
-            <span 
-              style={{
-                ...styles.availableBadge,
-                backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                color: '#8b5cf6',
-                border: '1px solid rgba(139, 92, 246, 0.25)',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-              onClick={() => setActiveTab('budget')}
-              title="Portafolio de Inversiones (activo independiente)"
-            >
-              📈 Inversiones: {formatAccountVal(summary.investmentsBalance)}
-            </span>
-          )}
-          {summary.totalReceivables > 0 && (
-            <span 
-              style={{
-                ...styles.availableBadge,
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                color: 'var(--color-success)',
-                border: '1px solid rgba(16, 185, 129, 0.25)',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-              onClick={() => setActiveTab('budget')}
-              title="Préstamos otorgados pendientes de cobro (activo independiente)"
-            >
-              🤝 Por cobrar: {formatAccountVal(summary.totalReceivables)}
-            </span>
-          )}
-          {summary.totalCreditCardDebt > 0 && (
-            <span 
-              style={{
-                ...styles.availableBadge,
-                backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                color: 'var(--color-danger)',
-                border: '1px solid rgba(239, 68, 68, 0.25)',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-              onClick={() => setActiveTab('cards')}
-              title="Deuda acumulada en tarjetas de crédito (pasivo independiente por pagar a plazos)"
-            >
-              💳 Deuda Tarjetas: {formatAccountVal(summary.totalCreditCardDebt)}
-            </span>
-          )}
-          {summary.totalOwedDebts > 0 && (
-            <span 
-              style={{
-                ...styles.availableBadge,
-                backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                color: 'var(--color-danger)',
-                border: '1px solid rgba(239, 68, 68, 0.25)',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-              onClick={() => setActiveTab('budget')}
-              title="Deudas por pagar a plazos (pasivo independiente - haz clic para abonar o gestionar)"
-            >
-              ⏳ Deuda por pagar: {formatAccountVal(summary.totalOwedDebts)}
-            </span>
-          )}
-          <span 
-            style={{ 
-              ...styles.availableBadge, 
-              cursor: 'pointer', 
-              border: '1px solid rgba(99, 102, 241, 0.35)',
-              backgroundColor: 'rgba(99, 102, 241, 0.08)',
-              color: '#6366f1'
-            }}
-            onClick={() => setActiveTab('cards')}
-            title="Ver y Gestionar Mis Tarjetas"
-          >
-            💳 {cards.length > 0 ? `${cards.filter(c => c.isActive).length} tarjetas activas` : 'Tarjetas'} ➔
-          </span>
+        {/* Desglose en mini-tarjetas / chips simétricos (Efectivo vs Cuentas/Débito) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+          {/* Chip 1: Efectivo */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '9px 12px',
+            borderRadius: '12px',
+            backgroundColor: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
+            minWidth: 0
+          }}>
+            <div style={{
+              width: '28px',
+              height: '28px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(34, 197, 94, 0.12)',
+              color: 'var(--color-success)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <DynamicIcon name="Banknote" size={15} />
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                Efectivo
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {formatAccountVal(summary.cashBalance)}
+              </div>
+            </div>
+          </div>
+
+          {/* Chip 2: Cuentas / Débito */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '9px 12px',
+            borderRadius: '12px',
+            backgroundColor: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
+            minWidth: 0
+          }}>
+            <div style={{
+              width: '28px',
+              height: '28px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(99, 102, 241, 0.12)',
+              color: '#6366f1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <DynamicIcon name="CreditCard" size={15} />
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                Cuentas / Débito
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {formatAccountVal(summary.debitCardsBalance ?? summary.bankBalance)}
+              </div>
+            </div>
+          </div>
         </div>
+
+        {/* Fila secundaria de Crédito Disponible (con menor peso visual para no confundirlo con dinero líquido) */}
+        {summary.totalCreditAvailable > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '7px 12px',
+            borderRadius: '10px',
+            backgroundColor: 'rgba(99, 102, 241, 0.05)',
+            border: '1px dashed rgba(99, 102, 241, 0.25)',
+            fontSize: '11px',
+            color: 'var(--text-secondary)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <DynamicIcon name="CreditCard" size={13} color="#6366f1" />
+              <span>
+                Crédito disponible: <strong style={{ color: 'var(--text-primary)', fontWeight: '700' }}>{formatAccountVal(summary.totalCreditAvailable)}</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('cards')}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--color-primary)',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                padding: '2px 4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '2px'
+              }}
+              title="Ir a gestionar tarjetas"
+            >
+              Gestionar ➔
+            </button>
+          </div>
+        )}
+
+        {/* Módulos independientes secundarios (Inversiones, Por cobrar, Deudas) */}
+        {(summary.investmentsBalance > 0 || summary.totalReceivables > 0 || summary.totalCreditCardDebt > 0 || summary.totalOwedDebts > 0) && (
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {summary.investmentsBalance > 0 && (
+              <span 
+                style={{
+                  ...styles.availableBadge,
+                  backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                  color: '#8b5cf6',
+                  border: '1px solid rgba(139, 92, 246, 0.25)',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setActiveTab('budget')}
+                title="Portafolio de Inversiones (activo independiente)"
+              >
+                📈 Inversiones: {formatAccountVal(summary.investmentsBalance)}
+              </span>
+            )}
+            {summary.totalReceivables > 0 && (
+              <span 
+                style={{
+                  ...styles.availableBadge,
+                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                  color: 'var(--color-success)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setActiveTab('budget')}
+                title="Préstamos otorgados pendientes de cobro (activo independiente)"
+              >
+                🤝 Por cobrar: {formatAccountVal(summary.totalReceivables)}
+              </span>
+            )}
+            {summary.totalCreditCardDebt > 0 && (
+              <span 
+                style={{
+                  ...styles.availableBadge,
+                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                  color: 'var(--color-danger)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setActiveTab('cards')}
+                title="Deuda acumulada en tarjetas de crédito (pasivo independiente por pagar a plazos)"
+              >
+                💳 Deuda Tarjetas: {formatAccountVal(summary.totalCreditCardDebt)}
+              </span>
+            )}
+            {summary.totalOwedDebts > 0 && (
+              <span 
+                style={{
+                  ...styles.availableBadge,
+                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                  color: 'var(--color-danger)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setActiveTab('budget')}
+                title="Deudas por pagar a plazos (pasivo independiente - haz clic para abonar o gestionar)"
+              >
+                ⏳ Deuda por pagar: {formatAccountVal(summary.totalOwedDebts)}
+              </span>
+            )}
+          </div>
+        )}
 
         <div style={styles.inOutGrid}>
           <div style={styles.inOutItem}>
@@ -523,7 +631,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         </div>
       </div>
 
-      {/* Quick Access Buttons */}
+      {/* Quick Access Buttons (2 botones simétricos) */}
       <div style={styles.quickActionsGrid}>
         <button
           onClick={() => onOpenTransactionModal(undefined, 'expense')}
@@ -538,19 +646,6 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
         >
           <DynamicIcon name="Plus" size={16} />
           <span>Añadir Ingreso</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('cards')}
-          style={{
-            ...styles.actionBtn,
-            backgroundColor: 'rgba(99, 102, 241, 0.1)',
-            color: '#6366f1',
-            border: '1px solid rgba(99, 102, 241, 0.25)',
-            gridColumn: 'span 2'
-          }}
-        >
-          <DynamicIcon name="CreditCard" size={16} color="#6366f1" />
-          <span>Mis Tarjetas y Métodos de Pago ({cards.filter(c => c.isActive).length})</span>
         </button>
       </div>
 
@@ -802,7 +897,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'radial-gradient(circle at 10% 20%, var(--bg-card) 0%, var(--bg-card-hover) 100%)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px',
+    gap: '12px',
     borderColor: 'var(--border-focus)',
   },
   balanceHeader: {
@@ -886,13 +981,13 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--color-success)',
   },
   quickActionsGrid: {
-    display: 'flex',
-    gap: '10px',
-    flexWrap: 'wrap',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '8px',
     width: '100%',
+    marginBottom: '2px',
   },
   actionBtn: {
-    flex: '1 1 130px',
     border: '1px solid transparent',
     borderRadius: '14px',
     padding: '12px',
