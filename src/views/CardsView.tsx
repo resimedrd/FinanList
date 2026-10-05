@@ -58,6 +58,7 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
   const [formBalanceUsed, setFormBalanceUsed] = useState<string>('0');
   const [formAlertThreshold, setFormAlertThreshold] = useState<string>('80');
   const [formBillingCutoffDay, setFormBillingCutoffDay] = useState<string>('15');
+  const [formGraceDays, setFormGraceDays] = useState<string>('20');
   const [formPaymentDueDay, setFormPaymentDueDay] = useState<string>('5');
 
   // Payment Modal state
@@ -92,6 +93,7 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
     setFormBalanceUsed('0');
     setFormAlertThreshold('80');
     setFormBillingCutoffDay('15');
+    setFormGraceDays('20');
     setFormPaymentDueDay('5');
     setShowCardModal(true);
   };
@@ -112,7 +114,8 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
     setFormCreditLimit(card.creditLimit?.toString() || '0');
     setFormBalanceUsed((card.balanceUsed ?? 0).toString());
     setFormAlertThreshold(card.alertThresholdPercent?.toString() || '80');
-    setFormBillingCutoffDay(card.billingCutoffDay?.toString() || '15');
+    setFormBillingCutoffDay((card.cutoffDay ?? card.billingCutoffDay ?? 15).toString());
+    setFormGraceDays((card.graceDays ?? 20).toString());
     setFormPaymentDueDay(card.paymentDueDay?.toString() || '5');
     setShowCardModal(true);
   };
@@ -171,6 +174,7 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
       const used = parseFloat(formBalanceUsed) || 0;
       const threshold = parseInt(formAlertThreshold, 10) || 80;
       const cutoff = parseInt(formBillingCutoffDay, 10) || 15;
+      const grace = parseInt(formGraceDays, 10) || 20;
       const due = parseInt(formPaymentDueDay, 10) || 5;
 
       if (editingCard) {
@@ -185,7 +189,9 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
           creditLimit: limit,
           balanceUsed: used,
           alertThresholdPercent: threshold,
+          cutoffDay: cutoff,
           billingCutoffDay: cutoff,
+          graceDays: grace,
           paymentDueDay: due,
           updatedAt: new Date().toISOString()
         });
@@ -200,8 +206,11 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
           isActive: formIsActive,
           creditLimit: limit,
           balanceUsed: used,
+          positiveBalance: 0,
           alertThresholdPercent: threshold,
+          cutoffDay: cutoff,
           billingCutoffDay: cutoff,
+          graceDays: grace,
           paymentDueDay: due
         });
       }
@@ -314,7 +323,13 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
     .filter(c => c.isActive && c.type === 'credit')
     .reduce((sum, c) => sum + (c.balanceUsed ?? 0), 0);
 
-  const totalCreditAvailable = Math.max(0, totalCreditLimit - totalCreditUsed);
+  const totalCreditPositive = cards
+    .filter(c => c.isActive && c.type === 'credit')
+    .reduce((sum, c) => sum + (c.positiveBalance ?? 0), 0);
+
+  const totalCreditAvailable = cards
+    .filter(c => c.isActive && c.type === 'credit')
+    .reduce((sum, c) => sum + FinancialEngine.getAvailableCredit(c), 0);
 
   const formatAmount = (val: number, cur = profile.currency) => {
     if (stealthMode) return `${cur} ••••`;
@@ -412,8 +427,11 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
             <div style={{ fontSize: '16px', fontWeight: '800', marginTop: '4px', color: 'var(--text-primary)' }}>
               {formatAmount(totalCreditAvailable)}
             </div>
-            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              Usado: {formatAmount(totalCreditUsed)}
+            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+              <span>Usado: {formatAmount(totalCreditUsed)} / {formatAmount(totalCreditLimit)}</span>
+              {totalCreditPositive > 0 && (
+                <span style={{ color: '#10b981', fontWeight: '700' }}>• +{formatAmount(totalCreditPositive)} a favor</span>
+              )}
             </div>
           </div>
         </div>
@@ -494,12 +512,20 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
               // Credit specific math
               const creditLimit = card.creditLimit || 0;
               const balanceUsed = card.balanceUsed || 0;
-              const availableCredit = Math.max(0, creditLimit - balanceUsed);
+              const positiveBalance = card.positiveBalance || 0;
+              const availableCredit = FinancialEngine.getAvailableCredit(card);
               const usedPercent = creditLimit > 0 ? (balanceUsed / creditLimit) * 100 : 0;
               const isCreditOverLimit = balanceUsed > creditLimit;
               const isCreditNearThreshold = usedPercent >= (card.alertThresholdPercent || 80);
-              const cutoffInfo = isCredit ? FinancialEngine.getDaysUntilCutoff(card.billingCutoffDay || 15) : null;
-              const paymentDueInfo = isCredit ? FinancialEngine.getDaysUntilPaymentDue(card.paymentDueDay || 5) : null;
+              const cycleDetails = isCredit ? FinancialEngine.getCardBillingCycleDetails(card, transactions) : null;
+              const cutoffInfo = cycleDetails ? {
+                days: cycleDetails.daysUntilCutoff,
+                isToday: cycleDetails.daysUntilCutoff === 0
+              } : null;
+              const paymentDueInfo = cycleDetails ? {
+                days: cycleDetails.daysUntilPaymentDue,
+                isToday: cycleDetails.daysUntilPaymentDue === 0
+              } : null;
 
               // Debit specific math
               const debitBalance = card.currentBalance ?? 0;
@@ -641,6 +667,11 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
                           }}>
                             {isCredit ? formatAmount(availableCredit, card.currency) : formatAmount(debitBalance, card.currency)}
                           </div>
+                          {isCredit && positiveBalance > 0 && (
+                            <div style={{ fontSize: '10px', color: '#a7f3d0', fontWeight: '700', marginTop: '2px' }}>
+                              ✨ Saldo a favor: {formatAmount(positiveBalance, card.currency)}
+                            </div>
+                          )}
                         </div>
 
                         <div style={{ textAlign: 'right' }}>
@@ -719,7 +750,7 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
                     gap: '8px'
                   }}>
                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)' }}>
-                      {isCredit && cutoffInfo && paymentDueInfo && (
+                      {isCredit && cycleDetails && cutoffInfo && paymentDueInfo && (
                         <>
                           <div style={{
                             display: 'inline-flex',
@@ -732,7 +763,7 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
                             fontWeight: '600'
                           }}>
                             <span>✂️ {cutoffInfo.isToday ? 'Corta HOY' : `Corta en ${cutoffInfo.days}d`}</span>
-                            <span style={{ fontSize: '10px', opacity: 0.7 }}>(día {card.billingCutoffDay || 15})</span>
+                            <span style={{ fontSize: '10px', opacity: 0.7 }}>(día {cycleDetails.cutoffDay})</span>
                           </div>
 
                           <div style={{
@@ -746,8 +777,38 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
                             fontWeight: '600'
                           }}>
                             <span>💳 {paymentDueInfo.isToday ? 'Vence HOY' : `Vence en ${paymentDueInfo.days}d`}</span>
-                            <span style={{ fontSize: '10px', opacity: 0.7 }}>(día {card.paymentDueDay || 5})</span>
+                            <span style={{ fontSize: '10px', opacity: 0.7 }}>({cycleDetails.paymentDueDate})</span>
                           </div>
+
+                          {cycleDetails.statementBalance > 0 && (
+                            <div style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                              color: 'var(--color-danger)',
+                              fontWeight: '700'
+                            }}>
+                              <span>Exigible al corte: {formatAmount(cycleDetails.statementBalance, card.currency)}</span>
+                            </div>
+                          )}
+
+                          {cycleDetails.currentCycleExpenses > 0 && (
+                            <div style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              backgroundColor: 'var(--bg-input)',
+                              color: 'var(--text-secondary)',
+                              fontWeight: '500'
+                            }}>
+                              <span>En ciclo actual: {formatAmount(cycleDetails.currentCycleExpenses, card.currency)}</span>
+                            </div>
+                          )}
                         </>
                       )}
                       {isDebit && (
@@ -1124,7 +1185,7 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
 
               <div style={{ display: 'flex', gap: '10px' }}>
                 <div className="input-group" style={{ flex: 1 }}>
-                  <label className="input-label">Día de Corte</label>
+                  <label className="input-label">Día de Corte (1-31)</label>
                   <input
                     type="number"
                     min={1}
@@ -1137,17 +1198,21 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
                 </div>
 
                 <div className="input-group" style={{ flex: 1 }}>
-                  <label className="input-label">Día Límite Pago</label>
+                  <label className="input-label">Días de Gracia</label>
                   <input
                     type="number"
                     min={1}
-                    max={31}
-                    placeholder="Ej: 5"
-                    value={formPaymentDueDay}
-                    onChange={(e) => setFormPaymentDueDay(e.target.value)}
+                    max={60}
+                    placeholder="Ej: 20 ó 22"
+                    value={formGraceDays}
+                    onChange={(e) => setFormGraceDays(e.target.value)}
                     className="input-field"
                   />
                 </div>
+              </div>
+
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '6px 10px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                🗓️ <strong>Ciclo estimado:</strong> Corte los días {formBillingCutoffDay || '15'} del mes + {formGraceDays || '20'} días de gracia para pagar sin cargos por mora.
               </div>
             </div>
           )}
@@ -1316,6 +1381,38 @@ export const CardsView: React.FC<CardsViewProps> = ({ onBack }) => {
               required
             />
           </div>
+
+          {/* Overpayment / positive balance notice */}
+          {(() => {
+            const target = cards.find(c => c.id === payTargetCardId);
+            const targetDebt = target?.balanceUsed ?? 0;
+            const numAmount = parseFloat(payAmount) || 0;
+            const overpayment = numAmount > targetDebt ? numAmount - targetDebt : 0;
+            if (overpayment > 0) {
+              return (
+                <div style={{
+                  backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                  border: '1px solid rgba(59, 130, 246, 0.25)',
+                  borderRadius: '10px',
+                  padding: '9px 12px',
+                  fontSize: '11px',
+                  color: '#3b82f6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <DynamicIcon name="Info" size={15} color="#3b82f6" />
+                  <div>
+                    <strong>Sobrepago ({formatAmount(overpayment, target?.currency || profile.currency)}):</strong>
+                    <div style={{ color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      Al superar la deuda actual ({formatAmount(targetDebt, target?.currency || profile.currency)}), el excedente se acreditará como <strong>Saldo a Favor</strong>, ampliando tu cupo de compra.
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {/* Date */}
           <div className="input-group">

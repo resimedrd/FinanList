@@ -28,8 +28,11 @@ export interface PaymentCard {
   // Credit card specific fields
   creditLimit?: number;        // Total credit limit approved
   balanceUsed?: number;        // Total amount spent / balance used
+  positiveBalance?: number;    // Saldo a favor por sobrepago (>= 0)
   alertThresholdPercent?: number; // Configurable alert threshold: 80, 90, 100 (%)
-  billingCutoffDay?: number;   // Día de corte (1-31)
+  cutoffDay?: number;          // Día del mes en que corta la tarjeta (1-31)
+  billingCutoffDay?: number;   // Alias para retrocompatibilidad (1-31)
+  graceDays?: number;          // Días de gracia tras el corte para pagar (default: 20)
   paymentDueDay?: number;      // Día límite de pago (1-31)
 
   createdAt: string;
@@ -150,6 +153,15 @@ export interface FinancialSummary {
   investmentsBalance?: number;
   totalReceivables?: number;
   totalOwedDebts?: number;
+  totalPositiveBalance?: number;
+  statementBalance?: number;
+  currentCycleExpenses?: number;
+  nextCutoffInfo?: {
+    cardName: string;
+    cutoffDate: string;
+    daysRemaining: number;
+    isPastCutoff: boolean;
+  };
 }
 
 export interface RecurringTransaction {

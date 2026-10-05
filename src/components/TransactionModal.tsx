@@ -5,7 +5,7 @@ import { Transaction, Category } from '../models/types';
 import { compressImageFile } from '../utils/imageUtils';
 import { useDebounce } from '../utils/useDebounce';
 import { CategoryDetector, CategoryDetectionResult } from '../services/CategoryDetector';
-
+import { FinancialEngine } from '../services/FinancialEngine';
 
 type CardImpact =
   | {
@@ -14,6 +14,8 @@ type CardImpact =
       projectedDebt: number;
       currentAvailable: number;
       projectedAvailable: number;
+      currentPositive: number;
+      projectedPositive: number;
       isOverLimit: boolean;
       creditLimit: number;
       currency: string;
@@ -240,14 +242,32 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
     if (selectedCard.type === 'credit') {
       const currentDebt = selectedCard.balanceUsed ?? 0;
       const creditLimit = selectedCard.creditLimit ?? 0;
-      const currentAvailable = Math.max(0, creditLimit - currentDebt);
+      const currentPositive = selectedCard.positiveBalance ?? 0;
+      const currentAvailable = FinancialEngine.getAvailableCredit(selectedCard);
 
-      const projectedDebt = type === 'expense'
-        ? currentDebt + numAmountVal
-        : Math.max(0, currentDebt - numAmountVal);
-      
-      const projectedAvailable = Math.max(0, creditLimit - projectedDebt);
-      const isOverLimit = projectedDebt > creditLimit;
+      let projectedDebt = currentDebt;
+      let projectedPositive = currentPositive;
+
+      if (numAmountVal > 0) {
+        if (type === 'expense') {
+          const simCard = { ...selectedCard };
+          FinancialEngine.applyExpenseToCreditCard(simCard, numAmountVal);
+          projectedDebt = simCard.balanceUsed ?? 0;
+          projectedPositive = simCard.positiveBalance ?? 0;
+        } else {
+          const simCard = { ...selectedCard };
+          FinancialEngine.applyPaymentToCreditCard(simCard, numAmountVal);
+          projectedDebt = simCard.balanceUsed ?? 0;
+          projectedPositive = simCard.positiveBalance ?? 0;
+        }
+      }
+
+      const projectedAvailable = FinancialEngine.getAvailableCredit({
+        ...selectedCard,
+        balanceUsed: projectedDebt,
+        positiveBalance: projectedPositive
+      });
+      const isOverLimit = type === 'expense' && numAmountVal > currentAvailable;
 
       return {
         isCredit: true,
@@ -255,6 +275,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
         projectedDebt,
         currentAvailable,
         projectedAvailable,
+        currentPositive,
+        projectedPositive,
         isOverLimit,
         creditLimit,
         currency: selectedCard.currency || profile.currency
@@ -662,6 +684,19 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
                       {cardImpact.currency}{cardImpact.currentDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ➔ {cardImpact.currency}{cardImpact.projectedDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
+                  {(cardImpact.currentPositive > 0 || cardImpact.projectedPositive > 0) && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Saldo a favor:</span>
+                      <span style={{ fontWeight: '700', color: '#10b981' }}>
+                        {cardImpact.currency}{cardImpact.currentPositive.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ➔ {cardImpact.currency}{cardImpact.projectedPositive.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+                  {cardImpact.currentPositive > 0 && type === 'expense' && (
+                    <div style={{ color: '#10b981', fontWeight: '600', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span>✨ Este gasto se descontará primero de tu Saldo a Favor antes de generar deuda.</span>
+                    </div>
+                  )}
                   {cardImpact.isOverLimit && (
                     <div style={{ color: 'var(--color-danger)', fontWeight: '700', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <span>⚠️ Este gasto superará el límite de crédito disponible.</span>

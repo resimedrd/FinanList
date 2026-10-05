@@ -532,8 +532,8 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           </div>
         )}
 
-        {/* Módulos independientes secundarios (Inversiones, Por cobrar, Deudas) */}
-        {(summary.investmentsBalance > 0 || summary.totalReceivables > 0 || summary.totalCreditCardDebt > 0 || summary.totalOwedDebts > 0) && (
+        {/* Módulos independientes secundarios (Inversiones, Por cobrar, Deudas, Saldo a Favor) */}
+        {(summary.investmentsBalance > 0 || summary.totalReceivables > 0 || (summary.statementBalance ?? 0) > 0 || summary.totalOwedDebts > 0 || (summary.totalPositiveBalance ?? 0) > 0 || ((summary.statementBalance ?? 0) === 0 && summary.nextCutoffInfo && summary.totalCreditAvailable > 0)) && (
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             {summary.investmentsBalance > 0 && (
               <span 
@@ -567,7 +567,23 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
                 🤝 Por cobrar: {formatAccountVal(summary.totalReceivables)}
               </span>
             )}
-            {summary.totalCreditCardDebt > 0 && (
+            {(summary.totalPositiveBalance ?? 0) > 0 && (
+              <span 
+                style={{
+                  ...styles.availableBadge,
+                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                  color: 'var(--color-success)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setActiveTab('cards')}
+                title="Saldo a favor acreditado en tarjetas de crédito por sobrepagos"
+              >
+                ✨ Saldo a favor: {formatAccountVal(summary.totalPositiveBalance)}
+              </span>
+            )}
+            {(summary.statementBalance ?? 0) > 0 ? (
               <span 
                 style={{
                   ...styles.availableBadge,
@@ -578,11 +594,26 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
                   cursor: 'pointer'
                 }}
                 onClick={() => setActiveTab('cards')}
-                title="Deuda acumulada en tarjetas de crédito (pasivo independiente por pagar a plazos)"
+                title="Saldo facturado exigible tras el corte de tarjeta (haz clic para pagar)"
               >
-                💳 Deuda Tarjetas: {formatAccountVal(summary.totalCreditCardDebt)}
+                💳 Saldo a pagar (facturado): {formatAccountVal(summary.statementBalance)}
               </span>
-            )}
+            ) : summary.nextCutoffInfo && (summary.totalCreditAvailable > 0 || summary.totalCreditCardDebt > 0) ? (
+              <span 
+                style={{
+                  ...styles.availableBadge,
+                  backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                  color: '#6366f1',
+                  border: '1px solid rgba(99, 102, 241, 0.25)',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setActiveTab('cards')}
+                title="Tarjeta dentro del ciclo de facturación actual (sin deuda facturada)"
+              >
+                🗓️ Próximo corte: en {summary.nextCutoffInfo.daysRemaining} {summary.nextCutoffInfo.daysRemaining === 1 ? 'día' : 'días'} ({summary.nextCutoffInfo.cardName})
+              </span>
+            ) : null}
             {summary.totalOwedDebts > 0 && (
               <span 
                 style={{

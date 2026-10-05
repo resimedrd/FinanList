@@ -420,4 +420,153 @@ describe('FinancialEngine', () => {
       expect(fullImpact.linkedCardId).toBe(creditCard.id);
     });
   });
+
+  describe('Credit Card Overpayment, Positive Balance & Billing Cycles', () => {
+    it('handles overpayment by assigning surplus to positiveBalance and recalculating available credit', () => {
+      const card: PaymentCard = {
+        id: 'cc_test',
+        name: 'Mastercard Gold',
+        bank: 'Banco Popular',
+        type: 'credit',
+        currency: 'RD$',
+        color: '#4f46e5',
+        isActive: true,
+        creditLimit: 50000,
+        balanceUsed: 8000,
+        positiveBalance: 0,
+        cutoffDay: 15,
+        graceDays: 20,
+        createdAt: new Date().toISOString()
+      };
+
+      // Pay 10,000 (debt is 8,000 -> 2,000 surplus to positiveBalance)
+      FinancialEngine.applyPaymentToCreditCard(card, 10000);
+      expect(card.balanceUsed).toBe(0);
+      expect(card.positiveBalance).toBe(2000);
+
+      // Total available credit: (50,000 - 0) + 2,000 = 52,000
+      expect(FinancialEngine.getAvailableCredit(card)).toBe(52000);
+
+      // Reverting the payment restores original state
+      FinancialEngine.applyPaymentToCreditCard(card, 10000, true);
+      expect(card.balanceUsed).toBe(8000);
+      expect(card.positiveBalance).toBe(0);
+      expect(FinancialEngine.getAvailableCredit(card)).toBe(42000);
+    });
+
+    it('consumes from positiveBalance first on new expenses before increasing debt', () => {
+      const card: PaymentCard = {
+        id: 'cc_test_2',
+        name: 'Visa Infinite',
+        bank: 'BHD',
+        type: 'credit',
+        currency: 'RD$',
+        color: '#4f46e5',
+        isActive: true,
+        creditLimit: 100000,
+        balanceUsed: 0,
+        positiveBalance: 3000,
+        cutoffDay: 20,
+        graceDays: 22,
+        createdAt: new Date().toISOString()
+      };
+
+      // Charge of 1,000 (fully absorbed by positiveBalance)
+      FinancialEngine.applyExpenseToCreditCard(card, 1000);
+      expect(card.positiveBalance).toBe(2000);
+      expect(card.balanceUsed).toBe(0);
+      expect(FinancialEngine.getAvailableCredit(card)).toBe(102000);
+
+      // Charge of 5,000 (absorbs 2,000 positiveBalance, remaining 3,000 increases balanceUsed)
+      FinancialEngine.applyExpenseToCreditCard(card, 5000);
+      expect(card.positiveBalance).toBe(0);
+      expect(card.balanceUsed).toBe(3000);
+      expect(FinancialEngine.getAvailableCredit(card)).toBe(97000);
+
+      // Reverting the 5,000 charge restores debt to 0 and positiveBalance to 2,000
+      FinancialEngine.applyExpenseToCreditCard(card, 5000, true);
+      expect(card.balanceUsed).toBe(0);
+      expect(card.positiveBalance).toBe(2000);
+      expect(FinancialEngine.getAvailableCredit(card)).toBe(102000);
+    });
+
+    it('calculates billing cycle details, due date with grace days, and separates current vs statement balance', () => {
+      const card: PaymentCard = {
+        id: 'cc_cycle',
+        name: 'Visa Rewards',
+        bank: 'Banreservas',
+        type: 'credit',
+        currency: 'RD$',
+        color: '#4f46e5',
+        isActive: true,
+        creditLimit: 60000,
+        balanceUsed: 15000,
+        cutoffDay: 15,
+        graceDays: 22,
+        createdAt: new Date().toISOString()
+      };
+
+      // Scenario A: Date is May 20 (past cutoff day 15)
+      const datePastCutoff = new Date(2026, 4, 20); // May 20, 2026
+      const txPriorCutoff: Transaction = {
+        id: 'tx_old',
+        amount: 10000,
+        type: 'expense',
+        categoryId: 'cat_super',
+        account: card.name,
+        cardId: card.id,
+        date: '2026-05-10', // Prior to cutoff on May 15
+        time: '12:00',
+        color: '#ff0000',
+        icon: 'Cart'
+      };
+      const txCurrentCycle: Transaction = {
+        id: 'tx_new',
+        amount: 5000,
+        type: 'expense',
+        categoryId: 'cat_super',
+        account: card.name,
+        cardId: card.id,
+        date: '2026-05-18', // In current cycle after May 15 cutoff
+        time: '14:00',
+        color: '#ff0000',
+        icon: 'Cart'
+      };
+
+      const details = FinancialEngine.getCardBillingCycleDetails(card, [txPriorCutoff, txCurrentCycle], datePastCutoff);
+      expect(details.isPastCutoff).toBe(true);
+      expect(details.lastCutoffDate).toBe('2026-05-15');
+      expect(details.nextCutoffDate).toBe('2026-06-15');
+      // Payment due date is May 15 + 22 days = June 6
+      expect(details.paymentDueDate).toBe('2026-06-06');
+      expect(details.currentCycleExpenses).toBe(5000);
+      expect(details.statementBalance).toBe(10000);
+    });
+
+    it('integrates positive balance and statement balance into calculateSummary', () => {
+      const cardWithPositive: PaymentCard = {
+        id: 'cc_pos',
+        name: 'Mastercard Black',
+        bank: 'BHD',
+        type: 'credit',
+        currency: 'RD$',
+        color: '#4f46e5',
+        isActive: true,
+        creditLimit: 80000,
+        balanceUsed: 0,
+        positiveBalance: 5000,
+        cutoffDay: 15,
+        graceDays: 20,
+        createdAt: new Date().toISOString()
+      };
+
+      const summary = FinancialEngine.calculateSummary([], [cardWithPositive]);
+      expect(summary.totalPositiveBalance).toBe(5000);
+      expect(summary.totalCreditCardDebt).toBe(0);
+      expect(summary.totalCreditAvailable).toBe(85000);
+      expect(summary.statementBalance).toBe(0);
+      expect(summary.nextCutoffInfo).toBeDefined();
+      expect(summary.nextCutoffInfo?.cardName).toBe('Mastercard Black');
+    });
+  });
 });

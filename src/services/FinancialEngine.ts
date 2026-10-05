@@ -38,8 +38,17 @@ export interface FinancialEngineSummary {
 
   // Tarjetas de Crédito
   totalCreditCardDebt: number;   // Pasivo acumulado por compras en crédito
-  totalCreditAvailable: number;  // Crédito total disponible para compras
+  totalCreditAvailable: number;  // Crédito total disponible para compras ((Límite - Deuda) + Saldo a favor)
   totalCreditLimit: number;      // Límite total de crédito aprobado
+  totalPositiveBalance: number;  // Saldo a favor acumulado por sobrepagos
+  statementBalance: number;      // Saldo exigible facturado tras fecha de corte
+  currentCycleExpenses: number;  // Gastos del ciclo actual que aún no cortan
+  nextCutoffInfo?: {
+    cardName: string;
+    cutoffDate: string;
+    daysRemaining: number;
+    isPastCutoff: boolean;
+  };
 
   // Portafolio de Inversiones
   investmentsBalance: number;
@@ -53,6 +62,27 @@ export interface FinancialEngineSummary {
   monthlyExpense: number;        // Solo gastos de consumo (excluye amortizaciones de deuda y transferencias)
   monthlySavings: number;
   budgetProgress: number;        // Consumo presupuestario (0 - 100%)
+}
+
+/**
+ * Detalles específicos del ciclo de facturación de una tarjeta de crédito
+ */
+export interface CreditCardCycleDetails {
+  cardId: string;
+  cardName: string;
+  cutoffDay: number;
+  graceDays: number;
+  lastCutoffDate: string;      // "YYYY-MM-DD"
+  nextCutoffDate: string;      // "YYYY-MM-DD"
+  paymentDueDate: string;      // "YYYY-MM-DD"
+  isPastCutoff: boolean;       // Si ya pasó el corte en el mes corriente
+  daysUntilCutoff: number;     // Días restantes para el próximo corte
+  daysUntilPaymentDue: number; // Días restantes para el límite de pago
+  statementBalance: number;    // Saldo exigible facturado al corte
+  currentCycleExpenses: number;// Compras del ciclo actual que aún no cortan
+  totalDebt: number;           // balanceUsed
+  positiveBalance: number;     // saldo a favor por sobrepago
+  availableCredit: number;     // (creditLimit - balanceUsed) + positiveBalance
 }
 
 export class FinancialEngine {
@@ -74,6 +104,166 @@ export class FinancialEngine {
   }
 
   /**
+   * Aplica un pago o abono a una tarjeta de crédito, manejando sobrepago y saldo a favor.
+   * Si el monto supera la deuda actual, el excedente se asigna a positiveBalance.
+   */
+  static applyPaymentToCreditCard(card: PaymentCard, amount: number, isRevert = false): void {
+    if (isNaN(amount) || amount <= 0) return;
+    const debt = card.balanceUsed ?? 0;
+    const pos = card.positiveBalance ?? 0;
+
+    if (!isRevert) {
+      if (amount <= debt) {
+        card.balanceUsed = roundCurrency(debt - amount);
+        card.positiveBalance = pos;
+      } else {
+        card.balanceUsed = 0;
+        const surplus = safeSubtract(amount, debt);
+        card.positiveBalance = roundCurrency(pos + surplus);
+      }
+    } else {
+      // Revertir pago: primero descuenta de positiveBalance; si no alcanza, restaura deuda
+      if (pos >= amount) {
+        card.positiveBalance = roundCurrency(pos - amount);
+      } else {
+        card.positiveBalance = 0;
+        const remaining = safeSubtract(amount, pos);
+        card.balanceUsed = roundCurrency(debt + remaining);
+      }
+    }
+  }
+
+  /**
+   * Aplica un gasto/compra a una tarjeta de crédito.
+   * El cargo se consume primero del positiveBalance antes de incrementar balanceUsed.
+   */
+  static applyExpenseToCreditCard(card: PaymentCard, amount: number, isRevert = false): void {
+    if (isNaN(amount) || amount <= 0) return;
+    const debt = card.balanceUsed ?? 0;
+    const pos = card.positiveBalance ?? 0;
+
+    if (!isRevert) {
+      if (pos >= amount) {
+        card.positiveBalance = roundCurrency(pos - amount);
+      } else {
+        card.positiveBalance = 0;
+        const excess = safeSubtract(amount, pos);
+        card.balanceUsed = roundCurrency(debt + excess);
+      }
+    } else {
+      // Revertir gasto: primero reduce deuda; si sobra, restaura positiveBalance
+      if (debt >= amount) {
+        card.balanceUsed = roundCurrency(debt - amount);
+      } else {
+        card.balanceUsed = 0;
+        const remainder = safeSubtract(amount, debt);
+        card.positiveBalance = roundCurrency(pos + remainder);
+      }
+    }
+  }
+
+  /**
+   * Calcula el crédito disponible total de una tarjeta:
+   * (Límite - Deuda) + Saldo a favor
+   */
+  static getAvailableCredit(card: PaymentCard): number {
+    const limit = card.creditLimit ?? 0;
+    const debt = card.balanceUsed ?? 0;
+    const pos = card.positiveBalance ?? 0;
+    return roundCurrency(Math.max(0, limit - debt) + pos);
+  }
+
+  /**
+   * Calcula los detalles del ciclo de facturación y días de gracia de una tarjeta de crédito.
+   * Separa con precisión el saldo facturado exigible (statementBalance) y compras en ciclo (currentCycleExpenses).
+   */
+  static getCardBillingCycleDetails(
+    card: PaymentCard,
+    transactions: Transaction[] = [],
+    fromDate: Date = new Date()
+  ): CreditCardCycleDetails {
+    const cutoffDay = Math.min(31, Math.max(1, card.cutoffDay ?? card.billingCutoffDay ?? 15));
+    const graceDays = Math.max(1, card.graceDays ?? 20);
+
+    const year = fromDate.getFullYear();
+    const month = fromDate.getMonth();
+    const day = fromDate.getDate();
+
+    const getSafeDate = (y: number, m: number, d: number): Date => {
+      const lastDayOfMonth = new Date(y, m + 1, 0).getDate();
+      return new Date(y, m, Math.min(d, lastDayOfMonth));
+    };
+
+    const isPastCutoff = day > cutoffDay;
+
+    let lastCutoffDateObj: Date;
+    let nextCutoffDateObj: Date;
+
+    if (isPastCutoff) {
+      lastCutoffDateObj = getSafeDate(year, month, cutoffDay);
+      nextCutoffDateObj = getSafeDate(year, month + 1, cutoffDay);
+    } else {
+      lastCutoffDateObj = getSafeDate(year, month - 1, cutoffDay);
+      nextCutoffDateObj = getSafeDate(year, month, cutoffDay);
+    }
+
+    const formatDateStr = (d: Date): string => {
+      const yStr = d.getFullYear();
+      const mStr = String(d.getMonth() + 1).padStart(2, '0');
+      const dStr = String(d.getDate()).padStart(2, '0');
+      return `${yStr}-${mStr}-${dStr}`;
+    };
+
+    const lastCutoffDate = formatDateStr(lastCutoffDateObj);
+    const nextCutoffDate = formatDateStr(nextCutoffDateObj);
+
+    // Fecha límite de pago: corte + graceDays
+    const paymentDueDateObj = new Date(lastCutoffDateObj.getTime() + graceDays * 24 * 60 * 60 * 1000);
+    const paymentDueDate = formatDateStr(paymentDueDateObj);
+
+    const todayZero = new Date(year, month, day);
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const daysUntilCutoff = Math.max(0, Math.round((nextCutoffDateObj.getTime() - todayZero.getTime()) / msPerDay));
+    const daysUntilPaymentDue = Math.round((paymentDueDateObj.getTime() - todayZero.getTime()) / msPerDay);
+
+    const totalDebt = card.balanceUsed ?? 0;
+    const positiveBalance = card.positiveBalance ?? 0;
+    const availableCredit = this.getAvailableCredit(card);
+
+    let statementBalance = 0;
+    let currentCycleExpenses = 0;
+
+    if (totalDebt > 0) {
+      const newExpenses = transactions
+        .filter(tx => tx.cardId === card.id && tx.type === 'expense' && tx.date > lastCutoffDate)
+        .reduce((sum, tx) => sum + tx.amount, 0);
+
+      currentCycleExpenses = roundCurrency(Math.min(totalDebt, newExpenses));
+      const unpaidPriorCutoff = roundCurrency(Math.max(0, totalDebt - currentCycleExpenses));
+
+      statementBalance = unpaidPriorCutoff;
+    }
+
+    return {
+      cardId: card.id,
+      cardName: card.name,
+      cutoffDay,
+      graceDays,
+      lastCutoffDate,
+      nextCutoffDate,
+      paymentDueDate,
+      isPastCutoff,
+      daysUntilCutoff,
+      daysUntilPaymentDue,
+      statementBalance,
+      currentCycleExpenses,
+      totalDebt,
+      positiveBalance,
+      availableCredit
+    };
+  }
+
+  /**
    * Calcula el resumen financiero consolidado como Fuente Única de Verdad (Single Source of Truth).
    * Desacopla Efectivo, Tarjetas (Crédito y Débito), Inversiones, Deudas y Metas.
    */
@@ -87,7 +277,7 @@ export class FinancialEngine {
   ): FinancialEngineSummary {
     const currentYM = this.getCurrentYearMonth();
 
-    // 1. Tarjetas de Crédito: Pasivos y Límites disponibles
+    // 1. Tarjetas de Crédito: Pasivos, Límites disponibles y Saldo a Favor
     const activeCreditCards = cards.filter(c => c.isActive && c.type === 'credit');
     const totalCreditLimit = roundCurrency(
       activeCreditCards.reduce((sum, c) => sum + (c.creditLimit ?? 0), 0)
@@ -95,13 +285,35 @@ export class FinancialEngine {
     const totalCreditCardDebt = roundCurrency(
       activeCreditCards.reduce((sum, c) => sum + (c.balanceUsed ?? 0), 0)
     );
-    const totalCreditAvailable = roundCurrency(
-      activeCreditCards.reduce((sum, c) => {
-        const limit = c.creditLimit ?? 0;
-        const used = c.balanceUsed ?? 0;
-        return sum + Math.max(0, limit - used);
-      }, 0)
+    const totalPositiveBalance = roundCurrency(
+      activeCreditCards.reduce((sum, c) => sum + (c.positiveBalance ?? 0), 0)
     );
+    const totalCreditAvailable = roundCurrency(
+      activeCreditCards.reduce((sum, c) => sum + this.getAvailableCredit(c), 0)
+    );
+
+    // Ciclos de facturación para tarjetas de crédito
+    let totalStatementBalance = 0;
+    let totalCurrentCycleExpenses = 0;
+    let nearestCutoff: { cardName: string; cutoffDate: string; daysRemaining: number; isPastCutoff: boolean; } | undefined = undefined;
+
+    activeCreditCards.forEach(card => {
+      const details = this.getCardBillingCycleDetails(card, transactions);
+      totalStatementBalance += details.statementBalance;
+      totalCurrentCycleExpenses += details.currentCycleExpenses;
+
+      if (!nearestCutoff || details.daysUntilCutoff < nearestCutoff.daysRemaining) {
+        nearestCutoff = {
+          cardName: card.name,
+          cutoffDate: details.nextCutoffDate,
+          daysRemaining: details.daysUntilCutoff,
+          isPastCutoff: details.isPastCutoff
+        };
+      }
+    });
+
+    totalStatementBalance = roundCurrency(totalStatementBalance);
+    totalCurrentCycleExpenses = roundCurrency(totalCurrentCycleExpenses);
 
     // 2. Tarjetas de Débito: Saldo en tarjetas de débito activas
     const activeDebitCards = cards.filter(c => c.isActive && c.type === 'debit');
@@ -231,6 +443,10 @@ export class FinancialEngine {
       totalCreditCardDebt,
       totalCreditAvailable,
       totalCreditLimit,
+      totalPositiveBalance,
+      statementBalance: totalStatementBalance,
+      currentCycleExpenses: totalCurrentCycleExpenses,
+      nextCutoffInfo: nearestCutoff,
       investmentsBalance: investmentsTotal,
       totalReceivables,
       totalOwedDebts,
@@ -278,7 +494,7 @@ export class FinancialEngine {
         const suggestedCards = allCards.filter(c => {
           if (!c.isActive) return false;
           if (c.type === 'credit') {
-            const cap = Math.max(0, (c.creditLimit ?? 0) - (c.balanceUsed ?? 0));
+            const cap = FinancialEngine.getAvailableCredit(c);
             return cap >= amount;
           }
           return (c.currentBalance ?? 0) >= amount;
@@ -306,11 +522,9 @@ export class FinancialEngine {
         };
       }
 
-      // 2A. Tarjeta de Crédito: Validar cupo disponible
+      // 2A. Tarjeta de Crédito: Validar cupo disponible ((Límite - Deuda) + Saldo a favor)
       if (selectedCard.type === 'credit') {
-        const limit = selectedCard.creditLimit ?? 0;
-        const used = selectedCard.balanceUsed ?? 0;
-        const availableCredit = roundCurrency(Math.max(0, limit - used));
+        const availableCredit = FinancialEngine.getAvailableCredit(selectedCard);
 
         if (amount > availableCredit) {
           const shortfall = roundCurrency(amount - availableCredit);
@@ -318,7 +532,7 @@ export class FinancialEngine {
           const suggestedCards = allCards.filter(c => {
             if (!c.isActive || c.id === selectedCard.id) return false;
             if (c.type === 'credit') {
-              const cap = Math.max(0, (c.creditLimit ?? 0) - (c.balanceUsed ?? 0));
+              const cap = FinancialEngine.getAvailableCredit(c);
               return cap >= amount;
             }
             return (c.currentBalance ?? 0) >= amount;
@@ -347,7 +561,7 @@ export class FinancialEngine {
           const suggestedCards = allCards.filter(c => {
             if (!c.isActive || c.id === selectedCard.id) return false;
             if (c.type === 'credit') {
-              const cap = Math.max(0, (c.creditLimit ?? 0) - (c.balanceUsed ?? 0));
+              const cap = FinancialEngine.getAvailableCredit(c);
               return cap >= amount;
             }
             return (c.currentBalance ?? 0) >= amount;

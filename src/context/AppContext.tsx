@@ -5,6 +5,7 @@ import { AppwriteService, AppwriteUser } from '../services/AppwriteService';
 import { isAppwriteConfigured } from '../services/appwriteClient';
 import { createLocalDate, formatLocalDateISO } from '../utils/dateUtils';
 import { roundCurrency } from '../utils/currencyUtils';
+import { FinancialEngine } from '../services/FinancialEngine';
 
 interface AppContextType {
   transactions: Transaction[];
@@ -603,10 +604,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         } else if (card.type === 'credit') {
           if (tx.type === 'expense') {
-            card.balanceUsed = roundCurrency((card.balanceUsed ?? 0) + (tx.amount * factor));
+            FinancialEngine.applyExpenseToCreditCard(card, tx.amount, isRevert);
             updated = true;
           } else if (tx.type === 'income') {
-            card.balanceUsed = roundCurrency(Math.max(0, (card.balanceUsed ?? 0) - (tx.amount * factor)));
+            FinancialEngine.applyPaymentToCreditCard(card, tx.amount, isRevert);
             updated = true;
           }
         }
@@ -620,7 +621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (tx.type === 'payment' && tx.destinationCardId) {
       const destCard = currentCards.find(c => c.id === tx.destinationCardId);
       if (destCard && destCard.type === 'credit') {
-        destCard.balanceUsed = roundCurrency(Math.max(0, (destCard.balanceUsed ?? 0) - (tx.amount * factor)));
+        FinancialEngine.applyPaymentToCreditCard(destCard, tx.amount, isRevert);
         updated = true;
         if (!isRevert) {
           checkAndTriggerCardAlerts(destCard);

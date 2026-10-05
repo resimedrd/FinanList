@@ -34,6 +34,15 @@ export class StatsService {
     totalCreditCardDebt: number;
     totalCreditAvailable: number;
     totalCreditLimit: number;
+    totalPositiveBalance: number;
+    statementBalance: number;
+    currentCycleExpenses: number;
+    nextCutoffInfo?: {
+      cardName: string;
+      cutoffDate: string;
+      daysRemaining: number;
+      isPastCutoff: boolean;
+    };
     cashBalance: number;
     bankBalance: number;
     debitCardsBalance: number;
@@ -58,6 +67,10 @@ export class StatsService {
       totalCreditCardDebt: summary.totalCreditCardDebt,
       totalCreditAvailable: summary.totalCreditAvailable,
       totalCreditLimit: summary.totalCreditLimit,
+      totalPositiveBalance: summary.totalPositiveBalance,
+      statementBalance: summary.statementBalance,
+      currentCycleExpenses: summary.currentCycleExpenses,
+      nextCutoffInfo: summary.nextCutoffInfo,
       cashBalance: summary.cashBalance,
       bankBalance: summary.bankBalance,
       debitCardsBalance: summary.debitCardsBalance,
