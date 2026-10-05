@@ -1963,7 +1963,7 @@ export const BudgetView: React.FC = () => {
       {/* --- CUSTOM ACCOUNT PICKER SHEET --- */}
       {showAccountPicker && (
         <div className="modal-overlay open" onClick={() => setShowAccountPicker(false)}>
-          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ paddingBottom: '30px' }}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0 }}>{accountPickerTitle}</h3>
               <button className="btn-ghost" onClick={() => setShowAccountPicker(false)}>
@@ -2013,8 +2013,8 @@ export const BudgetView: React.FC = () => {
 
       {/* QUICK EXPENSE BOTTOM SHEET MODAL */}
       {showQuickExpenseModal && quickExpenseBudget && (
-        <div className="modal-overlay open" onClick={handleCloseQuickExpenseModal} style={{ zIndex: 99 }}>
-          <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()} style={{ paddingBottom: '90px' }}>
+        <div className="modal-overlay open" onClick={handleCloseQuickExpenseModal}>
+          <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Registrar Gasto Rápido</h3>
               <button className="modal-close" onClick={handleCloseQuickExpenseModal}>
@@ -2154,8 +2154,8 @@ export const BudgetView: React.FC = () => {
 
       {/* --- ADD INVESTMENT MOVE MODAL SHEET --- */}
       {showAddInvestmentMove && (
-        <div className="modal-overlay open" onClick={handleCloseInvestmentModal} style={{ zIndex: 1000 }}>
-          <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()} style={{ paddingBottom: '90px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div className="modal-overlay open" onClick={handleCloseInvestmentModal}>
+          <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Registrar Movimiento</h2>
               <button className="modal-close" onClick={handleCloseInvestmentModal}>

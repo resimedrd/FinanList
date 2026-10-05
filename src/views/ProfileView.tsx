@@ -783,7 +783,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
       {/* CATEGORIES MANAGEMENT MODAL */}
       {showCatModal && (
         <div className="modal-overlay open" onClick={() => setShowCatModal(false)}>
-          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '80%', overflowY: 'auto' }}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Gestionar Categorías</h2>
               <button className="btn-ghost" onClick={() => setShowCatModal(false)}>
@@ -941,7 +941,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
       {/* RECURRING TRANSACTIONS MODAL */}
       {showRecModal && (
         <div className="modal-overlay open" onClick={() => setShowRecModal(false)}>
-          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '80%', overflowY: 'auto' }}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Transacciones Recurrentes</h2>
               <button className="btn-ghost" onClick={() => setShowRecModal(false)}>
@@ -1143,7 +1143,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
       {/* MODAL CAMBIAR CONTRASEÑA */}
       {showPasswordModal && (
         <div className="modal-overlay open" onClick={() => setShowPasswordModal(false)}>
-          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '85%', overflowY: 'auto' }}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Cambiar Contraseña</h2>
               <button className="btn-ghost" onClick={() => setShowPasswordModal(false)}>
@@ -1244,7 +1244,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
       {/* MODAL RESTABLECER DATOS */}
       {showResetConfirmModal && (
         <div className="modal-overlay open" onClick={() => !isResetting && setShowResetConfirmModal(false)}>
-          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <DynamicIcon name="RotateCcw" size={20} color="#f59e0b" />
@@ -1295,7 +1295,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onTriggerWelcomeTour }
       {/* MODAL ELIMINAR PERFIL */}
       {showDeleteAccountModal && (
         <div className="modal-overlay open" onClick={() => !isDeletingAccount && setShowDeleteAccountModal(false)}>
-          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <DynamicIcon name="AlertTriangle" size={20} color="#ef4444" />
