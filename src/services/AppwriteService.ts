@@ -205,7 +205,7 @@ export class AppwriteService {
       }
     } catch (err: any) {
       console.warn(`[Appwrite] Error guardando documento en ${collectionId}:`, err?.message || err);
-      return null;
+      throw err;
     }
   }
 
@@ -221,7 +221,115 @@ export class AppwriteService {
       // Si ya no existe (404), se considera eliminado con éxito
       if (err.code === 404) return true;
       console.warn(`[Appwrite] Error eliminando documento de ${collectionId}:`, err?.message || err);
-      return false;
+      throw err;
+    }
+  }
+
+  // --- Patrón Outbox Transaccional ---
+
+  /**
+   * Encola una operación en la cola outbox local y dispara el drenado asíncrono.
+   */
+  static async enqueueOutbox(
+    entity: 'transaction' | 'card' | 'goal' | 'debt' | 'category' | 'budget' | 'profile' | 'recurring',
+    action: 'create' | 'update' | 'delete',
+    payload: any,
+    userId: string
+  ): Promise<any> {
+    const { OutboxService } = await import('./OutboxService');
+    return OutboxService.enqueue({
+      entity,
+      action,
+      payload,
+      userId
+    });
+  }
+
+  /**
+   * Drena secuencialmente las operaciones de la cola outbox en orden FIFO.
+   */
+  static async flushOutbox(): Promise<boolean> {
+    const { OutboxService } = await import('./OutboxService');
+    return OutboxService.flush();
+  }
+
+  /**
+   * Retorna la cantidad de operaciones pendientes en la cola outbox.
+   */
+  static async getPendingOutboxCount(): Promise<number> {
+    const { OutboxService } = await import('./OutboxService');
+    return OutboxService.getPendingCount();
+  }
+
+  /**
+   * Limpia de forma forzosa todas las operaciones pendientes de la cola outbox (usado en reseteo de datos).
+   */
+  static async clearOutbox(): Promise<void> {
+    const { OutboxService } = await import('./OutboxService');
+    await OutboxService.clearPending();
+  }
+
+  /**
+   * Ejecuta una operación individual del outbox contra los endpoints correspondientes de Appwrite.
+   */
+  static async executeOutboxOperation(op: any): Promise<boolean> {
+    if (!isAppwriteConfigured) return true;
+
+    switch (op.entity) {
+      case 'transaction':
+        if (op.action === 'delete') {
+          await this.deleteTransaction(op.payload?.id || op.payload);
+        } else {
+          await this.syncTransaction(op.payload, op.userId);
+        }
+        return true;
+      case 'card':
+        if (op.action === 'delete') {
+          await this.deleteCard(op.payload?.id || op.payload);
+        } else {
+          await this.syncCard(op.payload, op.userId);
+        }
+        return true;
+      case 'goal':
+        if (op.action === 'delete') {
+          await this.deleteGoal(op.payload?.id || op.payload);
+        } else {
+          await this.syncGoal(op.payload, op.userId);
+        }
+        return true;
+      case 'debt':
+        if (op.action === 'delete') {
+          await this.deleteDebt(op.payload?.id || op.payload);
+        } else {
+          await this.syncDebt(op.payload, op.userId);
+        }
+        return true;
+      case 'budget':
+        if (op.action === 'delete') {
+          await this.deleteBudget(op.payload?.id || op.payload);
+        } else {
+          await this.syncBudget(op.payload, op.userId);
+        }
+        return true;
+      case 'category':
+        if (op.action === 'delete') {
+          await this.deleteCategory(op.payload?.id || op.payload);
+        } else {
+          await this.syncCategory(op.payload, op.userId);
+        }
+        return true;
+      case 'profile':
+        await this.syncProfile(op.payload, op.userId);
+        return true;
+      case 'recurring':
+        if (op.action === 'delete') {
+          await this.deleteRecurring(op.payload?.id || op.payload);
+        } else {
+          await this.syncRecurring(op.payload, op.userId);
+        }
+        return true;
+      default:
+        return true;
     }
   }
 
@@ -246,7 +354,8 @@ export class AppwriteService {
         accentColor: doc.accent_color || '#8b5cf6',
         pinCode: doc.pin_code || undefined,
         biometricsEnabled: !!doc.biometrics_enabled,
-        stealthModeEnabled: !!doc.stealth_mode_enabled
+        stealthModeEnabled: !!doc.stealth_mode_enabled,
+        lastResetAt: doc.last_reset_at || undefined
       };
     } catch (err) {
       console.warn('[Appwrite] Error obteniendo perfil:', err);
@@ -255,7 +364,7 @@ export class AppwriteService {
   }
 
   static async syncProfile(profile: UserProfile, userId: string): Promise<void> {
-    const data = {
+    const data: Record<string, any> = {
       user_id: userId,
       name: profile.name,
       username: (profile.username || '').toLowerCase(),
@@ -267,6 +376,9 @@ export class AppwriteService {
       pin_code: profile.pinCode || '',
       stealth_mode_enabled: !!profile.stealthModeEnabled
     };
+    if (profile.lastResetAt) {
+      data.last_reset_at = profile.lastResetAt;
+    }
     await this.safeUpsert(COLLECTIONS.PROFILES, `profile_${userId}`, data, userId);
   }
 
@@ -288,13 +400,16 @@ export class AppwriteService {
         account: d.account,
         cardId: d.card_id || undefined,
         destinationCardId: d.destination_card_id || undefined,
+        sourceAccountId: d.source_account_id || undefined,
+        destinationAccountId: d.destination_account_id || undefined,
         date: d.date,
         time: d.time,
         notes: d.notes || undefined,
         tags: Array.isArray(d.tags) ? d.tags : [],
         color: d.color,
         icon: d.icon,
-        favorite: !!d.favorite
+        favorite: !!d.favorite,
+        createdAt: d.$createdAt
       }));
     } catch (err) {
       console.warn('[Appwrite] Error listando transacciones:', err);
@@ -303,7 +418,7 @@ export class AppwriteService {
   }
 
   static async syncTransaction(tx: Transaction, userId: string): Promise<void> {
-    const data = {
+    const data: Record<string, any> = {
       user_id: userId,
       amount: tx.amount,
       type: tx.type,
@@ -320,6 +435,8 @@ export class AppwriteService {
       icon: tx.icon,
       favorite: !!tx.favorite
     };
+    if (tx.sourceAccountId) data.source_account_id = tx.sourceAccountId;
+    if (tx.destinationAccountId) data.destination_account_id = tx.destinationAccountId;
     await this.safeUpsert(COLLECTIONS.TRANSACTIONS, tx.id, data, userId);
   }
 
@@ -663,28 +780,73 @@ export class AppwriteService {
         Query.equal('is_read', false),
         Query.limit(100)
       ]);
-      for (const doc of res.documents) {
-        try {
-          await databases.updateDocument(this.dbId, COLLECTIONS.NOTIFICATIONS, doc.$id, { is_read: true });
-        } catch {}
+      const concurrency = 8;
+      for (let i = 0; i < res.documents.length; i += concurrency) {
+        const chunk = res.documents.slice(i, i + concurrency);
+        await Promise.all(
+          chunk.map(doc =>
+            databases.updateDocument(this.dbId, COLLECTIONS.NOTIFICATIONS, doc.$id, { is_read: true }).catch(() => null)
+          )
+        );
       }
     } catch (e) {
       console.warn('[Appwrite] Error marcando notificaciones leídas:', e);
     }
   }
 
-  static async clearAllNotifications(userId: string): Promise<void> {
+  /**
+   * Elimina documentos de una colección en lotes concurrentes controlados (máx 8 promesas simultáneas),
+   * evitando saturar límites de tasa (HTTP 429) o timeouts.
+   */
+  private static async deleteDocumentsInBatches(
+    collectionId: string,
+    docIds: string[],
+    concurrency = 8
+  ): Promise<void> {
+    for (let i = 0; i < docIds.length; i += concurrency) {
+      const chunk = docIds.slice(i, i + concurrency);
+      await Promise.all(
+        chunk.map(id =>
+          databases.deleteDocument(this.dbId, collectionId, id).catch((err: any) => {
+            if (err?.code === 404) return;
+            throw err;
+          })
+        )
+      );
+    }
+  }
+
+  /**
+   * Vacía exhaustivamente todos los documentos de un usuario en una colección dada,
+   * paginando en bloques de 100 hasta que no quede ningún documento y borrándolos en lotes concurrentes.
+   */
+  private static async purgeUserCollection(collectionId: string, userId: string): Promise<void> {
     if (!isAppwriteConfigured) return;
-    try {
-      const res = await databases.listDocuments(this.dbId, COLLECTIONS.NOTIFICATIONS, [
+    let hasMore = true;
+    while (hasMore) {
+      const res = await databases.listDocuments(this.dbId, collectionId, [
         Query.equal('user_id', userId),
         Query.limit(100)
       ]);
-      for (const doc of res.documents) {
-        try {
-          await databases.deleteDocument(this.dbId, COLLECTIONS.NOTIFICATIONS, doc.$id);
-        } catch {}
+
+      if (!res.documents || res.documents.length === 0) {
+        hasMore = false;
+        break;
       }
+
+      const docIds = res.documents.map(d => d.$id);
+      await this.deleteDocumentsInBatches(collectionId, docIds, 8);
+
+      if (res.documents.length < 100) {
+        hasMore = false;
+      }
+    }
+  }
+
+  static async clearAllNotifications(userId: string): Promise<void> {
+    if (!isAppwriteConfigured) return;
+    try {
+      await this.purgeUserCollection(COLLECTIONS.NOTIFICATIONS, userId);
     } catch (e) {
       console.warn('[Appwrite] Error eliminando notificaciones:', e);
     }
@@ -693,6 +855,7 @@ export class AppwriteService {
   /**
    * Elimina solo los registros financieros (transacciones, tarjetas, presupuestos, metas, deudas, recurrentes, notificaciones)
    * sin eliminar el perfil del usuario ni sus categorías.
+   * Utiliza procesamiento por lotes concurrentes y vaciado paginado total.
    */
   static async resetFinancialData(userId: string): Promise<void> {
     if (!isAppwriteConfigured) return;
@@ -707,19 +870,7 @@ export class AppwriteService {
     ];
 
     for (const col of collections) {
-      try {
-        const res = await databases.listDocuments(this.dbId, col, [
-          Query.equal('user_id', userId),
-          Query.limit(500)
-        ]);
-        for (const doc of res.documents) {
-          try {
-            await databases.deleteDocument(this.dbId, col, doc.$id);
-          } catch {}
-        }
-      } catch (e) {
-        console.warn(`[Appwrite] Error limpiando colección ${col}:`, e);
-      }
+      await this.purgeUserCollection(col, userId);
     }
   }
 
@@ -742,17 +893,9 @@ export class AppwriteService {
 
     for (const col of collections) {
       try {
-        const res = await databases.listDocuments(this.dbId, col, [
-          Query.equal('user_id', userId),
-          Query.limit(500)
-        ]);
-        for (const doc of res.documents) {
-          try {
-            await databases.deleteDocument(this.dbId, col, doc.$id);
-          } catch {}
-        }
+        await this.purgeUserCollection(col, userId);
       } catch (e) {
-        console.warn(`[Appwrite] Error limpiando colección ${col}:`, e);
+        console.warn(`[Appwrite] Error purgando colección ${col}:`, e);
       }
     }
   }

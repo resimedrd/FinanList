@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { DynamicIcon } from '../components/DynamicIcon';
+import { CryptoService } from '../services/CryptoService';
 import {
-  verifyPin,
-  isLegacyPlaintextPin,
-  hashPin,
   checkPinLockout,
   recordFailedPinAttempt,
   resetPinLockout,
@@ -44,21 +42,21 @@ export const LockScreen: React.FC = () => {
       // Auto submit if length is 4
       if (nextPin.length === 4) {
         setIsVerifying(true);
-        const isMatch = await verifyPin(nextPin, targetPin);
+        const isMatch = await CryptoService.verifyPin(nextPin, targetPin);
 
         if (isMatch) {
           resetPinLockout();
 
-          // Transparent migration from legacy plaintext PIN to PBKDF2 hash
-          if (isLegacyPlaintextPin(targetPin)) {
+          // Transparent migration from legacy plaintext PIN to SHA-256 hash
+          if (CryptoService.isLegacyPlaintext(targetPin)) {
             try {
-              const hashed = await hashPin(nextPin);
+              const hashed = await CryptoService.hashPin(nextPin);
               await updateProfile({
                 ...profile,
                 pinCode: hashed,
               });
             } catch (err) {
-              console.error('[LockScreen] Error migrating PIN to PBKDF2:', err);
+              console.error('[LockScreen] Error migrating PIN to SHA-256:', err);
             }
           }
 

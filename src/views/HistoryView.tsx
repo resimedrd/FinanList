@@ -14,7 +14,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState<string>('');
   const debouncedSearchTerm = useDebounce(searchTerm, 250);
-  const [selectedType, setSelectedType] = useState<'all' | 'income' | 'expense' | 'payment'>('all');
+  const [selectedType, setSelectedType] = useState<'all' | 'income' | 'expense' | 'transfer' | 'payment'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedAccount, setSelectedAccount] = useState<string>('all');
   const [onlyFavorites, setOnlyFavorites] = useState<boolean>(false);
@@ -233,7 +233,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
           <div style={styles.filterItem}>
             <span style={styles.filterLabel}>Tipo de Movimiento</span>
             <div style={styles.filterOptions}>
-              {['all', 'income', 'expense', 'payment'].map(t => (
+              {['all', 'income', 'expense', 'transfer', 'payment'].map(t => (
                 <button
                   key={t}
                   onClick={() => setSelectedType(t as any)}
@@ -244,7 +244,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
                     color: selectedType === t ? 'var(--color-primary)' : 'var(--text-primary)',
                   }}
                 >
-                  {t === 'all' ? 'Todos' : t === 'income' ? 'Ingresos' : t === 'expense' ? 'Gastos' : 'Pagos de Tarjeta'}
+                  {t === 'all' ? 'Todos' : t === 'income' ? 'Ingresos' : t === 'expense' ? 'Gastos' : t === 'transfer' ? 'Transferencias' : 'Pagos de Tarjeta'}
                 </button>
               ))}
             </div>
@@ -473,10 +473,10 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onOpenTransactionModal
                               style={{
                                 fontSize: '13px',
                                 fontWeight: '700',
-                                color: tx.type === 'income' ? 'var(--color-success)' : tx.type === 'payment' ? '#6366f1' : 'var(--color-danger)'
+                                color: tx.type === 'income' ? 'var(--color-success)' : tx.type === 'payment' ? '#6366f1' : tx.type === 'transfer' ? '#3b82f6' : 'var(--color-danger)'
                               }}
                             >
-                              {tx.type === 'income' ? '+' : tx.type === 'payment' ? '💳 ' : '-'}{profile.currency}{tx.amount.toFixed(2)}
+                              {tx.type === 'income' ? '+' : tx.type === 'payment' ? '💳 ' : tx.type === 'transfer' ? '↔ ' : '-'}{profile.currency}{tx.amount.toFixed(2)}
                             </div>
                             <button
                               onClick={(e) => handleDeleteTx(tx.id, e)}

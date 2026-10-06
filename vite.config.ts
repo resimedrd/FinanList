@@ -17,7 +17,7 @@ export default defineConfig({
           'vendor-react-core': ['react', 'react-dom'],
           'vendor-icons': ['lucide-react'],
           'vendor-appwrite': ['appwrite'],
-          'vendor-pdf': ['jspdf', 'jspdf-autotable', 'html2canvas']
+          'vendor-pdf': ['jspdf', 'jspdf-autotable']
         }
       }
     }

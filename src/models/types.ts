@@ -51,18 +51,21 @@ export interface FinancialNotification {
   createdAt: string;
 }
 
+export type TransactionType = 'income' | 'expense' | 'transfer';
 export type PaymentMethod = 'cash' | 'card';
 
 export interface Transaction {
   id: string;
   amount: number;
-  type: 'income' | 'expense' | 'payment';
+  type: TransactionType | 'payment';
   categoryId: string;
   subcategoryId?: string;
   paymentMethod?: PaymentMethod; // 'cash' | 'card'
   account: string;               // e.g. "Efectivo", or card name (e.g. "BHD Débito", "Visa Oro")
   cardId?: string;               // Associated PaymentCard ID if paid with card
   destinationCardId?: string;    // For card payments: which credit card received the payment
+  sourceAccountId?: string;      // Cuenta de origen para transferencias
+  destinationAccountId?: string;// Cuenta de destino para transferencias
   date: string;                  // YYYY-MM-DD
   time: string;                  // HH:MM
   notes?: string;
@@ -76,6 +79,7 @@ export interface Transaction {
     name?: string;
   };
   favorite?: boolean;
+  createdAt?: string;
 }
 
 export interface Budget {
@@ -163,6 +167,7 @@ export interface UserProfile {
   biometricsEnabled?: boolean;
   stealthModeEnabled?: boolean;
   budgetDistribution?: BudgetDistributionTargets;
+  lastResetAt?: string;
 }
 
 export interface FinancialSummary {
@@ -219,4 +224,6 @@ export interface Debt {
   interestRate?: number;     // %
   notes?: string;
   linkedCardId?: string;     // Optional: ID de tarjeta de crédito asociada (libera cupo al pagar)
+  createdAt?: string;
+  updatedAt?: string;
 }

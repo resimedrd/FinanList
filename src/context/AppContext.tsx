@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Transaction, Category, Budget, SavingGoal, UserProfile, RecurringTransaction, Debt, PaymentCard, FinancialNotification } from '../models/types';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { Transaction, Category, Budget, SavingGoal, UserProfile, RecurringTransaction, Debt, PaymentCard, FinancialNotification, TransactionType } from '../models/types';
 import { LocalRepository } from '../repositories/LocalRepository';
 import { AppwriteService, AppwriteUser } from '../services/AppwriteService';
 import { isAppwriteConfigured } from '../services/appwriteClient';
@@ -117,18 +117,178 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return !!p.stealthModeEnabled;
   });
 
-  // Reload local state values
-  const reloadAll = () => {
-    setTransactions(LocalRepository.getTransactions());
-    setCategories(LocalRepository.getCategories());
-    setBudgets(LocalRepository.getBudgets());
-    setGoals(LocalRepository.getGoals());
-    setProfile(LocalRepository.getProfile());
-    setRecurring(LocalRepository.getRecurring());
-    setDebts(LocalRepository.getDebts());
-    setCards(LocalRepository.getCards());
-    setNotifications(LocalRepository.getNotifications());
-  };
+  // --- Transaction & Card Cloud Synchronization Helpers (Outbox Pattern) ---
+  const syncTransactionToCloud = useCallback(async (tx: Transaction, userId: string) => {
+    if (!isAppwriteConfigured) return;
+    try {
+      await AppwriteService.enqueueOutbox('transaction', 'create', tx, userId);
+    } catch (err) {
+      console.warn('[Appwrite Sync] Error encolando transacción en Outbox:', err);
+    }
+  }, []);
+
+  const syncCardToCloud = useCallback(async (card: PaymentCard, targetUserId?: string) => {
+    const uid = targetUserId || user?.id;
+    if (!uid || !isAppwriteConfigured) return;
+    try {
+      await AppwriteService.enqueueOutbox('card', 'create', card, uid);
+    } catch (e) {
+      console.warn('[Appwrite Sync] Error encolando tarjeta en Outbox:', e);
+    }
+  }, [user]);
+
+  // Fetch all user records from Appwrite collections with reset-safety
+  const loadAllFromCloud = useCallback(async (userId: string) => {
+    try {
+      // 1. Profile
+      const loadedProfile = await AppwriteService.getProfile(userId);
+      const localResetTime = LocalRepository.getLastResetAt() ? new Date(LocalRepository.getLastResetAt()!).getTime() : 0;
+      const cloudResetTime = loadedProfile?.lastResetAt ? new Date(loadedProfile.lastResetAt).getTime() : 0;
+      const effectiveResetTime = Math.max(localResetTime, cloudResetTime);
+
+      if (loadedProfile) {
+        const mergedProfile = {
+          ...loadedProfile,
+          lastResetAt: effectiveResetTime > 0 ? new Date(effectiveResetTime).toISOString() : loadedProfile.lastResetAt
+        };
+        setProfile(mergedProfile);
+        LocalRepository.saveProfile(mergedProfile);
+        setAuthenticated(!mergedProfile.pinCode);
+      }
+
+      const isBeforeReset = (createdAt?: string, dateStr?: string) => {
+        if (effectiveResetTime <= 0) return false;
+        if (createdAt) {
+          const t = new Date(createdAt).getTime();
+          if (!isNaN(t) && t <= effectiveResetTime) return true;
+        }
+        if (dateStr) {
+          const t = new Date(dateStr).getTime();
+          if (!isNaN(t) && t <= effectiveResetTime) return true;
+        }
+        return false;
+      };
+
+      // 2. Categories
+      const loadedCats = await AppwriteService.listCategories(userId);
+      if (loadedCats && loadedCats.length > 0) {
+        setCategories(loadedCats);
+        LocalRepository.saveCategories(loadedCats);
+      }
+
+      // 3. Transactions (Non-destructive reconciliation with reset isolation)
+      try {
+        const loadedTxs = await AppwriteService.listTransactions(userId);
+        const validLoadedTxs = effectiveResetTime > 0
+          ? (loadedTxs || []).filter(t => !isBeforeReset(t.createdAt, t.date))
+          : (loadedTxs || []);
+
+        if (effectiveResetTime > 0) {
+          // Si hubo un reseteo reciente, la verdad son únicamente los registros posteriores al reseteo.
+          // No reenviamos transacciones huérfanas locales a la nube.
+          setTransactions(validLoadedTxs);
+          LocalRepository.saveTransactions(validLoadedTxs);
+        } else {
+          const localTxs = LocalRepository.getTransactions();
+          const cloudTxIds = new Set(validLoadedTxs.map(t => t.id));
+          const unsyncedLocalTxs = localTxs.filter(t => !cloudTxIds.has(t.id));
+
+          const mergedTxs = [...validLoadedTxs, ...unsyncedLocalTxs];
+          mergedTxs.sort((a, b) => {
+            const dateComp = b.date.localeCompare(a.date);
+            if (dateComp !== 0) return dateComp;
+            return (b.time || '').localeCompare(a.time || '');
+          });
+
+          setTransactions(mergedTxs);
+          LocalRepository.saveTransactions(mergedTxs);
+
+          if (unsyncedLocalTxs.length > 0 && userId) {
+            unsyncedLocalTxs.forEach(tx => {
+              syncTransactionToCloud(tx, userId);
+            });
+          }
+        }
+      } catch (txEx) {
+        console.warn('Exception loading transactions from Appwrite:', txEx);
+      }
+
+      // 4. Budgets
+      const loadedBudgets = await AppwriteService.listBudgets(userId);
+      const validBudgets = effectiveResetTime > 0
+        ? (loadedBudgets || []).filter(b => !isBeforeReset(undefined, b.startDate))
+        : (loadedBudgets || []);
+      setBudgets(validBudgets);
+      LocalRepository.saveBudgets(validBudgets);
+
+      // 5. Goals
+      const loadedGoals = await AppwriteService.listGoals(userId);
+      const validGoals = effectiveResetTime > 0
+        ? (loadedGoals || []).filter(g => !isBeforeReset(undefined, g.targetDate))
+        : (loadedGoals || []);
+      setGoals(validGoals);
+      LocalRepository.saveGoals(validGoals);
+
+      // 6. Debts
+      const loadedDebts = await AppwriteService.listDebts(userId);
+      const validDebts = effectiveResetTime > 0
+        ? (loadedDebts || []).filter(d => !isBeforeReset(d.createdAt, d.dueDate))
+        : (loadedDebts || []);
+      setDebts(validDebts);
+      LocalRepository.saveDebts(validDebts);
+
+      // 7. Recurring
+      const loadedRec = await AppwriteService.listRecurring(userId);
+      const validRec = effectiveResetTime > 0
+        ? (loadedRec || []).filter(r => !isBeforeReset(undefined, r.startDate))
+        : (loadedRec || []);
+      setRecurring(validRec);
+      LocalRepository.saveRecurring(validRec);
+
+      // 8. Payment Cards (Non-destructive reconciliation with reset isolation)
+      try {
+        const loadedCards = await AppwriteService.listCards(userId);
+        const validLoadedCards = effectiveResetTime > 0
+          ? (loadedCards || []).filter(c => !isBeforeReset(c.createdAt))
+          : (loadedCards || []);
+
+        if (effectiveResetTime > 0) {
+          // Tras reseteo, NUNCA empujar tarjetas locales residuales como nuevas mutaciones.
+          setCards(validLoadedCards);
+          LocalRepository.saveCards(validLoadedCards);
+        } else {
+          const localCards = LocalRepository.getCards();
+          const cloudCardIds = new Set(validLoadedCards.map(c => c.id));
+          const unsyncedCards = localCards.filter(c => !cloudCardIds.has(c.id));
+          const mergedCards = [...validLoadedCards, ...unsyncedCards];
+
+          setCards(mergedCards);
+          LocalRepository.saveCards(mergedCards);
+
+          if (unsyncedCards.length > 0) {
+            unsyncedCards.forEach(c => syncCardToCloud(c, userId));
+          }
+        }
+      } catch (cardErr) {
+        console.warn('Could not load cards from Appwrite:', cardErr);
+      }
+
+      // 9. Financial Notifications
+      try {
+        const loadedNotifs = await AppwriteService.listNotifications(userId);
+        const validNotifs = effectiveResetTime > 0
+          ? (loadedNotifs || []).filter(n => !isBeforeReset(n.createdAt))
+          : (loadedNotifs || []);
+        setNotifications(validNotifs);
+        LocalRepository.saveNotifications(validNotifs);
+      } catch (notifErr) {
+        console.warn('Could not load notifications from Appwrite:', notifErr);
+      }
+
+    } catch (err) {
+      console.error('Error fetching data from Appwrite: ', err);
+    }
+  }, [syncTransactionToCloud, syncCardToCloud]);
 
   // Sync Appwrite Authentication
   useEffect(() => {
@@ -146,6 +306,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setLocalIsOnboarded(true);
           try {
             await loadAllFromCloud(activeUser.id);
+            await AppwriteService.flushOutbox().catch(console.warn);
           } finally {
             setAuthLoading(false);
           }
@@ -156,141 +317,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .catch(() => {
         setAuthLoading(false);
       });
-  }, []);
-
-  // --- Transaction & Card Cloud Synchronization Helpers ---
-  const syncTransactionToCloud = async (tx: Transaction, userId: string) => {
-    if (!isAppwriteConfigured) return;
-    try {
-      await AppwriteService.syncTransaction(tx, userId);
-    } catch (err) {
-      console.warn('[Appwrite Sync] Unexpected transaction sync error:', err);
-    }
-  };
-
-  const syncCardToCloud = async (card: PaymentCard, targetUserId?: string) => {
-    const uid = targetUserId || user?.id;
-    if (!uid || !isAppwriteConfigured) return;
-    try {
-      await AppwriteService.syncCard(card, uid);
-    } catch (e) {
-      console.warn('Error syncing card to Appwrite:', e);
-    }
-  };
-
-  // Fetch all user records from Appwrite collections
-  const loadAllFromCloud = async (userId: string) => {
-    try {
-      // 1. Profile
-      const loadedProfile = await AppwriteService.getProfile(userId);
-      if (loadedProfile) {
-        setProfile(loadedProfile);
-        LocalRepository.saveProfile(loadedProfile);
-        setAuthenticated(!loadedProfile.pinCode);
-      }
-
-      // 2. Categories
-      const loadedCats = await AppwriteService.listCategories(userId);
-      if (loadedCats && loadedCats.length > 0) {
-        setCategories(loadedCats);
-        LocalRepository.saveCategories(loadedCats);
-      }
-
-      // 3. Transactions (Non-destructive reconciliation)
-      try {
-        const loadedTxs = await AppwriteService.listTransactions(userId);
-        if (loadedTxs && loadedTxs.length > 0) {
-          const localTxs = LocalRepository.getTransactions();
-          const cloudTxIds = new Set(loadedTxs.map(t => t.id));
-          const unsyncedLocalTxs = localTxs.filter(t => !cloudTxIds.has(t.id));
-
-          const mergedTxs = [...loadedTxs, ...unsyncedLocalTxs];
-          mergedTxs.sort((a, b) => {
-            const dateComp = b.date.localeCompare(a.date);
-            if (dateComp !== 0) return dateComp;
-            return (b.time || '').localeCompare(a.time || '');
-          });
-
-          setTransactions(mergedTxs);
-          LocalRepository.saveTransactions(mergedTxs);
-
-          // Push any unsynced local transactions to cloud in background
-          if (unsyncedLocalTxs.length > 0 && userId) {
-            unsyncedLocalTxs.forEach(tx => {
-              syncTransactionToCloud(tx, userId);
-            });
-          }
-        }
-      } catch (txEx) {
-        console.warn('Exception loading transactions from Appwrite:', txEx);
-      }
-
-      // 4. Budgets
-      const loadedBudgets = await AppwriteService.listBudgets(userId);
-      if (loadedBudgets && loadedBudgets.length > 0) {
-        setBudgets(loadedBudgets);
-        LocalRepository.saveBudgets(loadedBudgets);
-      }
-
-      // 5. Goals
-      const loadedGoals = await AppwriteService.listGoals(userId);
-      if (loadedGoals && loadedGoals.length > 0) {
-        setGoals(loadedGoals);
-        LocalRepository.saveGoals(loadedGoals);
-      }
-
-      // 6. Debts
-      const loadedDebts = await AppwriteService.listDebts(userId);
-      if (loadedDebts && loadedDebts.length > 0) {
-        setDebts(loadedDebts);
-        LocalRepository.saveDebts(loadedDebts);
-      }
-
-      // 7. Recurring
-      const loadedRec = await AppwriteService.listRecurring(userId);
-      if (loadedRec && loadedRec.length > 0) {
-        setRecurring(loadedRec);
-        LocalRepository.saveRecurring(loadedRec);
-      }
-
-      // 8. Payment Cards (Non-destructive reconciliation)
-      try {
-        const loadedCards = await AppwriteService.listCards(userId);
-        if (loadedCards && loadedCards.length > 0) {
-          const localCards = LocalRepository.getCards();
-          const cloudCardIds = new Set(loadedCards.map(c => c.id));
-          const unsyncedCards = localCards.filter(c => !cloudCardIds.has(c.id));
-          const mergedCards = [...loadedCards, ...unsyncedCards];
-
-          setCards(mergedCards);
-          LocalRepository.saveCards(mergedCards);
-
-          if (unsyncedCards.length > 0) {
-            unsyncedCards.forEach(c => syncCardToCloud(c, userId));
-          }
-        }
-      } catch (cardErr) {
-        console.warn('Could not load cards from Appwrite:', cardErr);
-      }
-
-      // 9. Financial Notifications
-      try {
-        const loadedNotifs = await AppwriteService.listNotifications(userId);
-        if (loadedNotifs && loadedNotifs.length > 0) {
-          setNotifications(loadedNotifs);
-          LocalRepository.saveNotifications(loadedNotifs);
-        }
-      } catch (notifErr) {
-        console.warn('Could not load notifications from Appwrite:', notifErr);
-      }
-
-    } catch (err) {
-      console.error('Error fetching data from Appwrite: ', err);
-    }
-  };
+  }, [loadAllFromCloud]);
 
   // Auth Operations
-  const signUp = async (email: string, pass: string, name: string, username: string) => {
+  const signUp = useCallback(async (email: string, pass: string, name: string, username: string) => {
     if (!isAppwriteConfigured) throw new Error('Appwrite no está configurado.');
 
     const activeUser = await AppwriteService.signUp(email, pass, name, username);
@@ -322,9 +352,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('finanlist_onboarded', 'true');
     setLocalIsOnboarded(true);
     return activeUser;
-  };
+  }, []);
 
-  const signIn = async (email: string, pass: string) => {
+  const signIn = useCallback(async (email: string, pass: string) => {
     if (!isAppwriteConfigured) throw new Error('Appwrite no está configurado.');
 
     const activeUser = await AppwriteService.signIn(email, pass);
@@ -333,43 +363,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('finanlist_onboarded', 'true');
     setLocalIsOnboarded(true);
     await loadAllFromCloud(activeUser.id);
+    await AppwriteService.flushOutbox().catch(console.warn);
     return activeUser;
-  };
+  }, [loadAllFromCloud]);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     if (isAppwriteConfigured) {
-      await AppwriteService.signOut();
+      try {
+        await AppwriteService.signOut();
+      } catch (err) {
+        console.error(err);
+      }
     }
     setUser(null);
     setIsCloudSynced(false);
     localStorage.clear();
     setLocalIsOnboarded(false);
     setAuthenticated(false);
-    reloadAll();
+    setTransactions([]);
+    setCategories(LocalRepository.getCategories());
+    setBudgets([]);
+    setGoals([]);
+    setProfile(LocalRepository.getProfile());
+    setRecurring([]);
+    setDebts([]);
+    setCards([]);
+    setNotifications([]);
     window.location.reload();
-  };
+  }, []);
 
-  const resetFinancialData = async () => {
-    // 1. Delete all financial records from Appwrite
+  const resetFinancialData = useCallback(async () => {
+    const resetIso = new Date().toISOString();
+
+    // 1. Limpia la cola outbox antes del reseteo para prevenir envío de operaciones residuales
+    await AppwriteService.clearOutbox().catch(console.warn);
+
+    // 2. Elimina registros financieros de Appwrite condicionado al éxito remoto
     if (isCloudSynced && user) {
       try {
         await AppwriteService.resetFinancialData(user.id);
-      } catch (e) {
-        console.error('Error resetting cloud data in Appwrite:', e);
-        throw e;
+        const updatedProfile = { ...profile, lastResetAt: resetIso };
+        await AppwriteService.syncProfile(updatedProfile, user.id);
+      } catch (e: any) {
+        console.error('Error restableciendo datos en Appwrite:', e);
+        throw new Error('No se pudo restablecer los datos en la nube. Operación cancelada para proteger tus datos locales: ' + (e?.message || e));
       }
     }
 
-    // 2. Clear financial data in localStorage (keeping profile, onboarded status, preferences)
-    localStorage.removeItem('finanlist_transactions');
-    localStorage.removeItem('finanlist_budgets');
-    localStorage.removeItem('finanlist_goals');
-    localStorage.removeItem('finanlist_debts');
-    localStorage.removeItem('finanlist_recurring');
-    localStorage.removeItem('finanlist_cards');
-    localStorage.removeItem('finanlist_notifications');
+    // 3. Limpia los datos financieros en LocalRepository e IndexedDB con await explícito
+    await LocalRepository.resetFinancialData();
 
-    // 3. Update React state immediately
+    // 4. Vacía la cola outbox por completo tras la limpieza local
+    await AppwriteService.clearOutbox().catch(console.warn);
+
+    // 5. Actualiza el perfil local con la marca de tiempo de reseteo
+    const updatedProfile = { ...profile, lastResetAt: resetIso };
+    setProfile(updatedProfile);
+    LocalRepository.saveProfile(updatedProfile);
+
+    // 6. Actualiza el estado reactivo inmediatamente a vacío
     setTransactions([]);
     setBudgets([]);
     setGoals([]);
@@ -377,36 +429,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRecurring([]);
     setCards([]);
     setNotifications([]);
-  };
+  }, [isCloudSynced, user, profile]);
 
-  const deleteAccount = async () => {
-    // 1. Delete all data and profile from Appwrite
+  const deleteAccount = useCallback(async () => {
     if (isCloudSynced && user) {
       try {
         await AppwriteService.deleteAllUserData(user.id);
       } catch (e) {
-        console.error('Error deleting user data from Appwrite:', e);
+        console.error('Error eliminando datos del usuario en Appwrite:', e);
       }
       try {
         await AppwriteService.signOut();
       } catch (e) {
-        console.error('Error signing out during deletion:', e);
+        console.error('Error cerrando sesión tras eliminación:', e);
       }
     }
 
-    // 2. Clear all local storage
     localStorage.clear();
-
-    // 3. Reset states and reload cleanly
     setUser(null);
     setIsCloudSynced(false);
     setLocalIsOnboarded(false);
     setAuthenticated(false);
-    reloadAll();
+    setTransactions([]);
+    setCategories(LocalRepository.getCategories());
+    setBudgets([]);
+    setGoals([]);
+    setProfile(LocalRepository.getProfile());
+    setRecurring([]);
+    setDebts([]);
+    setCards([]);
+    setNotifications([]);
     window.location.reload();
-  };
+  }, [isCloudSynced, user]);
 
-  const changePassword = async (currentPass: string, newPass: string) => {
+  const changePassword = useCallback(async (currentPass: string, newPass: string) => {
     if (!isAppwriteConfigured) {
       throw new Error('Appwrite no está configurado.');
     }
@@ -414,20 +470,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       throw new Error('No hay una sesión activa.');
     }
     await AppwriteService.changePassword(newPass, currentPass);
-  };
+  }, [user]);
 
-  const setStealthMode = (val: boolean) => {
+  const setStealthMode = useCallback((val: boolean) => {
     setStealthModeInternal(val);
-    const updated = { ...profile, stealthModeEnabled: val };
-    LocalRepository.saveProfile(updated);
-    setProfile(updated);
-    if (isCloudSynced && user) {
-      AppwriteService.syncProfile(updated, user.id).catch(console.error);
-    }
-  };
+    setProfile(prev => {
+      const updated = { ...prev, stealthModeEnabled: val };
+      LocalRepository.saveProfile(updated);
+      if (isCloudSynced && user) {
+        AppwriteService.syncProfile(updated, user.id).catch(console.error);
+      }
+      return updated;
+    });
+  }, [isCloudSynced, user]);
 
   // --- Card & Notification Helpers ---
-  const checkAndTriggerCardAlerts = (card: PaymentCard) => {
+  const checkAndTriggerCardAlerts = useCallback((card: PaymentCard) => {
     if (!card.isActive) return;
 
     const notificationsToAdd: FinancialNotification[] = [];
@@ -578,12 +636,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
       });
-      setNotifications(LocalRepository.getNotifications());
+      setNotifications(prev => [...notificationsToAdd, ...prev]);
     }
-  };
+  }, [isCloudSynced, user]);
 
-  const applyTransactionToCard = (
-    tx: { amount: number; type: 'income' | 'expense' | 'payment'; cardId?: string; destinationCardId?: string },
+  const applyTransactionToCard = useCallback((
+    tx: { amount: number; type: TransactionType | 'payment'; cardId?: string; destinationCardId?: string; sourceAccountId?: string; destinationAccountId?: string },
     isRevert = false
   ) => {
     const factor = isRevert ? -1 : 1;
@@ -595,7 +653,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const card = currentCards.find(c => c.id === tx.cardId);
       if (card) {
         if (card.type === 'debit') {
-          if (tx.type === 'expense' || tx.type === 'payment') {
+          if (tx.type === 'expense' || tx.type === 'payment' || tx.type === 'transfer') {
             card.currentBalance = roundCurrency((card.currentBalance ?? 0) - (tx.amount * factor));
             updated = true;
           } else if (tx.type === 'income') {
@@ -617,14 +675,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // 2. Transaction that pays a destination credit card
-    if (tx.type === 'payment' && tx.destinationCardId) {
+    // 2. Transaction that transfers or pays to destination card
+    if ((tx.type === 'payment' || tx.type === 'transfer') && tx.destinationCardId) {
       const destCard = currentCards.find(c => c.id === tx.destinationCardId);
-      if (destCard && destCard.type === 'credit') {
-        FinancialEngine.applyPaymentToCreditCard(destCard, tx.amount, isRevert);
-        updated = true;
-        if (!isRevert) {
-          checkAndTriggerCardAlerts(destCard);
+      if (destCard) {
+        if (destCard.type === 'credit') {
+          FinancialEngine.applyPaymentToCreditCard(destCard, tx.amount, isRevert);
+          updated = true;
+          if (!isRevert) {
+            checkAndTriggerCardAlerts(destCard);
+          }
+        } else if (destCard.type === 'debit') {
+          destCard.currentBalance = roundCurrency((destCard.currentBalance ?? 0) + (tx.amount * factor));
+          updated = true;
         }
       }
     }
@@ -636,10 +699,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentCards.forEach(c => syncCardToCloud(c));
       }
     }
-  };
+  }, [isCloudSynced, user, checkAndTriggerCardAlerts, syncCardToCloud]);
 
   // --- Transaction Ops ---
-  const addTransaction = async (txData: Omit<Transaction, 'id'>): Promise<void> => {
+  const addTransaction = useCallback(async (txData: Omit<Transaction, 'id'>): Promise<void> => {
     const id = 'tx_' + Date.now() + Math.random().toString(36).substr(2, 4);
     const newTx: Transaction = { ...txData, id };
     
@@ -647,18 +710,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     LocalRepository.addTransaction(newTx);
     applyTransactionToCard(newTx, false);
 
-    // 2. Goal tracking update
-    if (txData.type === 'expense' && txData.notes) {
+    // 2. Goal tracking update (supports both 'expense' and 'transfer')
+    let updatedGoalObj: SavingGoal | undefined;
+    if ((txData.type === 'expense' || txData.type === 'transfer') && txData.notes) {
       const match = txData.notes.match(/#goal:([a-zA-Z0-9_]+)/);
       if (match) {
         const goalId = match[1];
-        const goal = goals.find(g => g.id === goalId);
+        const currentGoals = LocalRepository.getGoals();
+        const goal = currentGoals.find(g => g.id === goalId);
         if (goal) {
           const updatedGoal = {
             ...goal,
-            currentAmount: goal.currentAmount + txData.amount
+            currentAmount: roundCurrency(goal.currentAmount + txData.amount)
           };
           LocalRepository.updateGoal(updatedGoal);
+          updatedGoalObj = updatedGoal;
           if (isCloudSynced && user) {
             AppwriteService.syncGoal(updatedGoal, user.id).catch(console.warn);
           }
@@ -666,8 +732,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // 3. Update React state immediately
-    reloadAll();
+    // 3. Update React state immediately without synchronous file reads
+    setTransactions(prev => [newTx, ...prev]);
+    if (updatedGoalObj) {
+      setGoals(prev => prev.map(g => g.id === updatedGoalObj!.id ? updatedGoalObj! : g));
+    }
 
     // 4. Sync to Appwrite (Background / Non-blocking)
     if (isCloudSynced && user) {
@@ -675,10 +744,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.warn('Error syncing new transaction to cloud:', e);
       });
     }
-  };
+  }, [isCloudSynced, user, applyTransactionToCard, syncTransactionToCloud]);
 
-  const updateTransaction = async (tx: Transaction): Promise<void> => {
-    const oldTx = transactions.find(t => t.id === tx.id);
+  const updateTransaction = useCallback(async (tx: Transaction): Promise<void> => {
+    let oldTx: Transaction | undefined;
+    setTransactions(prev => {
+      oldTx = prev.find(t => t.id === tx.id);
+      return prev.map(t => t.id === tx.id ? tx : t);
+    });
+
     LocalRepository.updateTransaction(tx);
 
     if (oldTx) {
@@ -686,35 +760,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     applyTransactionToCard(tx, false);
 
+    let updatedGoalObj: SavingGoal | undefined;
     if (oldTx) {
-      if (oldTx.type === 'expense' && oldTx.notes) {
+      if ((oldTx.type === 'expense' || oldTx.type === 'transfer') && oldTx.notes) {
         const match = oldTx.notes.match(/#goal:([a-zA-Z0-9_]+)/);
         if (match) {
           const goalId = match[1];
-          const goal = goals.find(g => g.id === goalId);
+          const currentGoals = LocalRepository.getGoals();
+          const goal = currentGoals.find(g => g.id === goalId);
           if (goal) {
             const updatedGoal = {
               ...goal,
-              currentAmount: Math.max(0, goal.currentAmount - oldTx.amount)
+              currentAmount: Math.max(0, roundCurrency(goal.currentAmount - oldTx.amount))
             };
             LocalRepository.updateGoal(updatedGoal);
+            updatedGoalObj = updatedGoal;
             if (isCloudSynced && user) {
               AppwriteService.syncGoal(updatedGoal, user.id).catch(console.warn);
             }
           }
         }
       }
-      if (tx.type === 'expense' && tx.notes) {
+      if ((tx.type === 'expense' || tx.type === 'transfer') && tx.notes) {
         const match = tx.notes.match(/#goal:([a-zA-Z0-9_]+)/);
         if (match) {
           const goalId = match[1];
-          const goal = goals.find(g => g.id === goalId);
+          const currentGoals = LocalRepository.getGoals();
+          const goal = currentGoals.find(g => g.id === goalId);
           if (goal) {
             const updatedGoal = {
               ...goal,
-              currentAmount: goal.currentAmount + tx.amount
+              currentAmount: roundCurrency(goal.currentAmount + tx.amount)
             };
             LocalRepository.updateGoal(updatedGoal);
+            updatedGoalObj = updatedGoal;
             if (isCloudSynced && user) {
               AppwriteService.syncGoal(updatedGoal, user.id).catch(console.warn);
             }
@@ -723,51 +802,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    reloadAll();
+    if (updatedGoalObj) {
+      setGoals(prev => prev.map(g => g.id === updatedGoalObj!.id ? updatedGoalObj! : g));
+    }
 
     if (isCloudSynced && user) {
       syncTransactionToCloud(tx, user.id).catch(e => {
-        console.warn('Error updating transaction in cloud:', e);
+        console.warn('Error syncing updated transaction to cloud:', e);
       });
     }
-  };
+  }, [isCloudSynced, user, applyTransactionToCard, syncTransactionToCloud]);
 
-  const deleteTransaction = async (id: string): Promise<void> => {
-    const tx = transactions.find(t => t.id === id);
-    if (tx) {
-      applyTransactionToCard(tx, true);
-    }
+  const deleteTransaction = useCallback(async (id: string): Promise<void> => {
+    let txToDelete: Transaction | undefined;
+    setTransactions(prev => {
+      txToDelete = prev.find(t => t.id === id);
+      return prev.filter(t => t.id !== id);
+    });
+
     LocalRepository.deleteTransaction(id);
 
-    if (tx && tx.type === 'expense' && tx.notes) {
-      const match = tx.notes.match(/#goal:([a-zA-Z0-9_]+)/);
-      if (match) {
-        const goalId = match[1];
-        const goal = goals.find(g => g.id === goalId);
-        if (goal) {
-          const updatedGoal = {
-            ...goal,
-            currentAmount: Math.max(0, goal.currentAmount - tx.amount)
-          };
-          LocalRepository.updateGoal(updatedGoal);
-          if (isCloudSynced && user) {
-            AppwriteService.syncGoal(updatedGoal, user.id).catch(console.warn);
+    if (txToDelete) {
+      applyTransactionToCard(txToDelete, true);
+
+      let updatedGoalObj: SavingGoal | undefined;
+      if ((txToDelete.type === 'expense' || txToDelete.type === 'transfer') && txToDelete.notes) {
+        const match = txToDelete.notes.match(/#goal:([a-zA-Z0-9_]+)/);
+        if (match) {
+          const goalId = match[1];
+          const currentGoals = LocalRepository.getGoals();
+          const goal = currentGoals.find(g => g.id === goalId);
+          if (goal) {
+            const updatedGoal = {
+              ...goal,
+              currentAmount: Math.max(0, roundCurrency(goal.currentAmount - txToDelete.amount))
+            };
+            LocalRepository.updateGoal(updatedGoal);
+            updatedGoalObj = updatedGoal;
+            if (isCloudSynced && user) {
+              AppwriteService.syncGoal(updatedGoal, user.id).catch(console.warn);
+            }
           }
         }
       }
+      if (updatedGoalObj) {
+        setGoals(prev => prev.map(g => g.id === updatedGoalObj!.id ? updatedGoalObj! : g));
+      }
     }
-
-    reloadAll();
 
     if (isCloudSynced && user) {
-      AppwriteService.deleteTransaction(id).catch(e => {
-        console.warn('Error deleting transaction in cloud:', e);
+      AppwriteService.enqueueOutbox('transaction', 'delete', { id }, user.id).catch(e => {
+        console.warn('Error encolando eliminación de transacción en Outbox:', e);
       });
     }
-  };
+  }, [isCloudSynced, user, applyTransactionToCard]);
 
   // --- Card Ops ---
-  const addCard = (cardData: Omit<PaymentCard, 'id' | 'createdAt'>): string => {
+  const addCard = useCallback((cardData: Omit<PaymentCard, 'id' | 'createdAt'>): string => {
     const id = 'card_' + Date.now() + Math.random().toString(36).substr(2, 4);
     const newCard: PaymentCard = {
       ...cardData,
@@ -775,40 +866,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString()
     };
     LocalRepository.addCard(newCard);
-    syncCardToCloud(newCard);
-    checkAndTriggerCardAlerts(newCard);
-    setCards(LocalRepository.getCards());
-    return id;
-  };
+    setCards(prev => [...prev, newCard]);
 
-  const updateCard = (card: PaymentCard) => {
-    LocalRepository.updateCard(card);
-    syncCardToCloud(card);
-    checkAndTriggerCardAlerts(card);
-    setCards(LocalRepository.getCards());
-  };
-
-  const deleteCard = async (id: string) => {
-    LocalRepository.deleteCard(id);
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.deleteCard(id);
-      } catch (e) {
-        console.error(e);
+      syncCardToCloud(newCard);
+    }
+    return id;
+  }, [isCloudSynced, user, syncCardToCloud]);
+
+  const updateCard = useCallback((card: PaymentCard) => {
+    LocalRepository.updateCard(card);
+    setCards(prev => prev.map(c => c.id === card.id ? card : c));
+
+    if (isCloudSynced && user) {
+      syncCardToCloud(card);
+    }
+  }, [isCloudSynced, user, syncCardToCloud]);
+
+  const deleteCard = useCallback((id: string) => {
+    LocalRepository.deleteCard(id);
+    setCards(prev => prev.filter(c => c.id !== id));
+
+    if (isCloudSynced && user) {
+      AppwriteService.enqueueOutbox('card', 'delete', { id }, user.id).catch(console.error);
+    }
+  }, [isCloudSynced, user]);
+
+  const toggleCardActive = useCallback((id: string) => {
+    setCards(prev => {
+      const card = prev.find(c => c.id === id);
+      if (card) {
+        const updated = { ...card, isActive: !card.isActive };
+        LocalRepository.updateCard(updated);
+        if (isCloudSynced && user) {
+          syncCardToCloud(updated);
+        }
+        return prev.map(c => c.id === id ? updated : c);
       }
-    }
-    setCards(LocalRepository.getCards());
-  };
+      return prev;
+    });
+  }, [isCloudSynced, user, syncCardToCloud]);
 
-  const toggleCardActive = (id: string) => {
-    const card = cards.find(c => c.id === id);
-    if (card) {
-      const updated = { ...card, isActive: !card.isActive };
-      updateCard(updated);
-    }
-  };
-
-  const recordCardPayment = (params: {
+  const recordCardPayment = useCallback((params: {
     destinationCardId: string;
     sourceCardId?: string;
     amount: number;
@@ -822,11 +921,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const paymentTx: Omit<Transaction, 'id'> = {
       amount: params.amount,
-      type: 'payment',
+      type: 'transfer',
       categoryId: 'cat_bills',
       account: sourceCard ? sourceCard.name : 'Efectivo',
       cardId: params.sourceCardId,
       destinationCardId: params.destinationCardId,
+      sourceAccountId: params.sourceCardId,
+      destinationAccountId: params.destinationCardId,
       date: params.date,
       time: params.time,
       notes: params.notes || `Pago a tarjeta ${destCard ? destCard.name : ''}`,
@@ -835,42 +936,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     addTransaction(paymentTx);
-  };
+  }, [addTransaction]);
 
   // --- Notification Ops ---
-  const markNotificationRead = (id: string) => {
+  const markNotificationRead = useCallback((id: string) => {
     LocalRepository.markNotificationAsRead(id);
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+
     if (isCloudSynced && user) {
       AppwriteService.updateNotification(id, { isRead: true }).catch(console.warn);
     }
-    setNotifications(LocalRepository.getNotifications());
-  };
+  }, [isCloudSynced, user]);
 
-  const markAllNotificationsRead = () => {
+  const markAllNotificationsRead = useCallback(() => {
     LocalRepository.markAllNotificationsAsRead();
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+
     if (isCloudSynced && user) {
       AppwriteService.markAllNotificationsRead(user.id).catch(console.warn);
     }
-    setNotifications(LocalRepository.getNotifications());
-  };
+  }, [isCloudSynced, user]);
 
-  const deleteNotification = (id: string) => {
+  const deleteNotification = useCallback((id: string) => {
     LocalRepository.deleteNotification(id);
+    setNotifications(prev => prev.filter(n => n.id !== id));
+
     if (isCloudSynced && user) {
       AppwriteService.deleteNotification(id).catch(console.warn);
     }
-    setNotifications(LocalRepository.getNotifications());
-  };
+  }, [isCloudSynced, user]);
 
-  const clearAllNotifications = () => {
+  const clearAllNotifications = useCallback(() => {
     LocalRepository.clearNotifications();
+    setNotifications([]);
+
     if (isCloudSynced && user) {
       AppwriteService.clearAllNotifications(user.id).catch(console.warn);
     }
-    setNotifications([]);
-  };
+  }, [isCloudSynced, user]);
 
-  const requestNotificationPermission = async (): Promise<NotificationPermission | null> => {
+  const requestNotificationPermission = useCallback(async (): Promise<NotificationPermission | null> => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       try {
         const perm = await Notification.requestPermission();
@@ -881,24 +986,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     return null;
-  };
+  }, []);
 
   // --- Category Ops ---
-  const addCategory = (catData: Omit<Category, 'id'>): string => {
+  const addCategory = useCallback((catData: Omit<Category, 'id'>): string => {
     const id = 'cat_' + Date.now() + Math.random().toString(36).substr(2, 4);
     const newCat = { ...catData, id };
     LocalRepository.addCategory(newCat);
+    setCategories(prev => [...prev, newCat]);
 
     if (isCloudSynced && user) {
       AppwriteService.syncCategory(newCat, user.id).catch(console.error);
     }
-
-    setCategories(LocalRepository.getCategories());
     return id;
-  };
+  }, [isCloudSynced, user]);
 
-  const updateCategory = async (cat: Category) => {
+  const updateCategory = useCallback(async (cat: Category) => {
     LocalRepository.updateCategory(cat);
+    setCategories(prev => prev.map(c => c.id === cat.id ? cat : c));
 
     if (isCloudSynced && user) {
       try {
@@ -907,12 +1012,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error(err);
       }
     }
+  }, [isCloudSynced, user]);
 
-    setCategories(LocalRepository.getCategories());
-  };
-
-  const deleteCategory = async (id: string) => {
+  const deleteCategory = useCallback(async (id: string) => {
     LocalRepository.deleteCategory(id);
+    setCategories(prev => prev.filter(c => c.id !== id));
 
     if (isCloudSynced && user) {
       try {
@@ -921,203 +1025,137 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error(err);
       }
     }
-
-    setCategories(LocalRepository.getCategories());
-  };
+  }, [isCloudSynced, user]);
 
   // --- Budget Ops ---
-  const addBudget = async (bData: Omit<Budget, 'id'>) => {
+  const addBudget = useCallback(async (bData: Omit<Budget, 'id'>) => {
     const id = 'bud_' + Date.now() + Math.random().toString(36).substr(2, 4);
     const newB = { ...bData, id };
     LocalRepository.addBudget(newB);
+    setBudgets(prev => [...prev, newB]);
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.syncBudget(newB, user.id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('budget', 'create', newB, user.id).catch(console.warn);
     }
+  }, [isCloudSynced, user]);
 
-    setBudgets(LocalRepository.getBudgets());
-  };
-
-  const updateBudget = async (b: Budget) => {
+  const updateBudget = useCallback(async (b: Budget) => {
     LocalRepository.updateBudget(b);
+    setBudgets(prev => prev.map(x => x.id === b.id ? b : x));
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.syncBudget(b, user.id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('budget', 'update', b, user.id).catch(console.warn);
     }
+  }, [isCloudSynced, user]);
 
-    setBudgets(LocalRepository.getBudgets());
-  };
-
-  const deleteBudget = async (id: string) => {
+  const deleteBudget = useCallback(async (id: string) => {
     LocalRepository.deleteBudget(id);
+    setBudgets(prev => prev.filter(x => x.id !== id));
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.deleteBudget(id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('budget', 'delete', { id }, user.id).catch(console.warn);
     }
-
-    setBudgets(LocalRepository.getBudgets());
-  };
+  }, [isCloudSynced, user]);
 
   // --- Saving Goal Ops ---
-  const addGoal = async (gData: Omit<SavingGoal, 'id'>) => {
+  const addGoal = useCallback(async (gData: Omit<SavingGoal, 'id'>) => {
     const id = 'goal_' + Date.now() + Math.random().toString(36).substr(2, 4);
     const newG = { ...gData, id };
     LocalRepository.addGoal(newG);
+    setGoals(prev => [...prev, newG]);
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.syncGoal(newG, user.id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('goal', 'create', newG, user.id).catch(console.warn);
     }
+  }, [isCloudSynced, user]);
 
-    setGoals(LocalRepository.getGoals());
-  };
-
-  const updateGoal = async (g: SavingGoal) => {
+  const updateGoal = useCallback(async (g: SavingGoal) => {
     LocalRepository.updateGoal(g);
+    setGoals(prev => prev.map(x => x.id === g.id ? g : x));
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.syncGoal(g, user.id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('goal', 'update', g, user.id).catch(console.warn);
     }
+  }, [isCloudSynced, user]);
 
-    setGoals(LocalRepository.getGoals());
-  };
-
-  const deleteGoal = async (id: string) => {
+  const deleteGoal = useCallback(async (id: string) => {
     LocalRepository.deleteGoal(id);
+    setGoals(prev => prev.filter(x => x.id !== id));
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.deleteGoal(id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('goal', 'delete', { id }, user.id).catch(console.warn);
     }
-
-    setGoals(LocalRepository.getGoals());
-  };
+  }, [isCloudSynced, user]);
 
   // --- Recurring Ops ---
-  const addRecurring = async (recData: Omit<RecurringTransaction, 'id'>) => {
+  const addRecurring = useCallback(async (recData: Omit<RecurringTransaction, 'id'>) => {
     const id = 'rec_' + Date.now() + Math.random().toString(36).substr(2, 4);
     const newRec = { ...recData, id };
     LocalRepository.addRecurring(newRec);
+    setRecurring(prev => [...prev, newRec]);
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.syncRecurring(newRec, user.id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('recurring', 'create', newRec, user.id).catch(console.warn);
     }
+  }, [isCloudSynced, user]);
 
-    setRecurring(LocalRepository.getRecurring());
-  };
-
-  const updateRecurring = async (rec: RecurringTransaction) => {
+  const updateRecurring = useCallback(async (rec: RecurringTransaction) => {
     LocalRepository.updateRecurring(rec);
+    setRecurring(prev => prev.map(x => x.id === rec.id ? rec : x));
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.syncRecurring(rec, user.id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('recurring', 'update', rec, user.id).catch(console.warn);
     }
+  }, [isCloudSynced, user]);
 
-    setRecurring(LocalRepository.getRecurring());
-  };
-
-  const deleteRecurring = async (id: string) => {
+  const deleteRecurring = useCallback(async (id: string) => {
     LocalRepository.deleteRecurring(id);
+    setRecurring(prev => prev.filter(x => x.id !== id));
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.deleteRecurring(id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('recurring', 'delete', { id }, user.id).catch(console.warn);
     }
-
-    setRecurring(LocalRepository.getRecurring());
-  };
+  }, [isCloudSynced, user]);
 
   // --- Debt Ops ---
-  const addDebt = async (debtData: Omit<Debt, 'id'>) => {
+  const addDebt = useCallback(async (debtData: Omit<Debt, 'id'>) => {
     const id = 'debt_' + Date.now() + Math.random().toString(36).substr(2, 4);
     const newDebt = { ...debtData, id };
     LocalRepository.addDebt(newDebt);
+    setDebts(prev => [...prev, newDebt]);
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.syncDebt(newDebt, user.id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('debt', 'create', newDebt, user.id).catch(console.warn);
     }
+  }, [isCloudSynced, user]);
 
-    setDebts(LocalRepository.getDebts());
-  };
-
-  const updateDebt = async (debt: Debt) => {
+  const updateDebt = useCallback(async (debt: Debt) => {
     LocalRepository.updateDebt(debt);
+    setDebts(prev => prev.map(x => x.id === debt.id ? debt : x));
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.syncDebt(debt, user.id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('debt', 'update', debt, user.id).catch(console.warn);
     }
+  }, [isCloudSynced, user]);
 
-    setDebts(LocalRepository.getDebts());
-  };
-
-  const deleteDebt = async (id: string) => {
+  const deleteDebt = useCallback(async (id: string) => {
     LocalRepository.deleteDebt(id);
+    setDebts(prev => prev.filter(x => x.id !== id));
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.deleteDebt(id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('debt', 'delete', { id }, user.id).catch(console.warn);
     }
-
-    setDebts(LocalRepository.getDebts());
-  };
+  }, [isCloudSynced, user]);
 
   // --- User Profile Ops ---
-  const updateProfile = async (profData: UserProfile) => {
+  const updateProfile = useCallback(async (profData: UserProfile) => {
     LocalRepository.saveProfile(profData);
     setProfile(profData);
 
     if (isCloudSynced && user) {
-      try {
-        await AppwriteService.syncProfile(profData, user.id);
-      } catch (err) {
-        console.error(err);
-      }
+      AppwriteService.enqueueOutbox('profile', 'update', profData, user.id).catch(console.warn);
     }
-  };
+  }, [isCloudSynced, user]);
 
   // Automated check and apply engine for recurring transactions
   useEffect(() => {
@@ -1131,6 +1169,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const now = new Date();
       let didApplyAny = false;
+      const newlyCreatedTxs: Transaction[] = [];
 
       for (const rec of activeRecs) {
         if (!isMounted) break;
@@ -1177,6 +1216,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               icon: rec.icon
             };
             LocalRepository.addTransaction(newTx);
+            applyTransactionToCard(newTx, false);
+            newlyCreatedTxs.push(newTx);
             rec.lastAppliedDate = checkDateStr;
             recUpdated = true;
             didApplyAny = true;
@@ -1206,7 +1247,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       if (didApplyAny && isMounted) {
-        reloadAll();
+        setTransactions(prev => [...newlyCreatedTxs, ...prev]);
+        setRecurring([...activeRecs]);
       }
     };
 
@@ -1215,82 +1257,150 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       isMounted = false;
     };
-  }, [localIsOnboarded, user]);
+  }, [localIsOnboarded, user, isCloudSynced, applyTransactionToCard]);
 
   // --- Import / Export ---
-  const backupData = () => {
+  const backupData = useCallback(() => {
     return LocalRepository.exportDataRaw();
-  };
+  }, []);
 
-  const restoreData = (json: string): boolean => {
+  const restoreData = useCallback((json: string): boolean => {
     const success = LocalRepository.importDataRaw(json);
     if (success) {
-      reloadAll();
+      try {
+        const backup = JSON.parse(json);
+        if (Array.isArray(backup.transactions)) setTransactions(backup.transactions);
+        if (Array.isArray(backup.categories)) setCategories(backup.categories);
+        if (Array.isArray(backup.budgets)) setBudgets(backup.budgets);
+        if (Array.isArray(backup.goals)) setGoals(backup.goals);
+        if (backup.profile) setProfile(backup.profile);
+        if (Array.isArray(backup.recurring)) setRecurring(backup.recurring);
+        if (Array.isArray(backup.debts)) setDebts(backup.debts);
+        if (Array.isArray(backup.cards)) setCards(backup.cards);
+        if (Array.isArray(backup.notifications)) setNotifications(backup.notifications);
+      } catch (err) {
+        console.error('Error restaurando backup en estado:', err);
+      }
     }
     return success;
-  };
+  }, []);
+
+  const contextValue = useMemo<AppContextType>(() => ({
+    transactions,
+    categories,
+    budgets,
+    goals,
+    profile,
+    recurring,
+    debts,
+    cards,
+    notifications,
+    isAuthenticated,
+    setAuthenticated,
+    isOnboarded: localIsOnboarded || !!user,
+    activeTab,
+    setActiveTab,
+    user,
+    isCloudSynced,
+    authLoading,
+    signUp,
+    signIn,
+    signOut,
+    resetFinancialData,
+    deleteAccount,
+    changePassword,
+    addTransaction,
+    updateTransaction,
+    deleteTransaction,
+    addCard,
+    updateCard,
+    deleteCard,
+    toggleCardActive,
+    recordCardPayment,
+    markNotificationRead,
+    markAllNotificationsRead,
+    deleteNotification,
+    clearAllNotifications,
+    requestNotificationPermission,
+    addCategory,
+    updateCategory,
+    deleteCategory,
+    addBudget,
+    updateBudget,
+    deleteBudget,
+    addGoal,
+    updateGoal,
+    deleteGoal,
+    addRecurring,
+    updateRecurring,
+    deleteRecurring,
+    addDebt,
+    updateDebt,
+    deleteDebt,
+    updateProfile,
+    backupData,
+    restoreData,
+    stealthMode,
+    setStealthMode
+  }), [
+    transactions,
+    categories,
+    budgets,
+    goals,
+    profile,
+    recurring,
+    debts,
+    cards,
+    notifications,
+    isAuthenticated,
+    localIsOnboarded,
+    activeTab,
+    user,
+    isCloudSynced,
+    authLoading,
+    stealthMode,
+    signUp,
+    signIn,
+    signOut,
+    resetFinancialData,
+    deleteAccount,
+    changePassword,
+    addTransaction,
+    updateTransaction,
+    deleteTransaction,
+    addCard,
+    updateCard,
+    deleteCard,
+    toggleCardActive,
+    recordCardPayment,
+    markNotificationRead,
+    markAllNotificationsRead,
+    deleteNotification,
+    clearAllNotifications,
+    requestNotificationPermission,
+    addCategory,
+    updateCategory,
+    deleteCategory,
+    addBudget,
+    updateBudget,
+    deleteBudget,
+    addGoal,
+    updateGoal,
+    deleteGoal,
+    addRecurring,
+    updateRecurring,
+    deleteRecurring,
+    addDebt,
+    updateDebt,
+    deleteDebt,
+    updateProfile,
+    backupData,
+    restoreData,
+    setStealthMode
+  ]);
 
   return (
-    <AppContext.Provider
-      value={{
-        transactions,
-        categories,
-        budgets,
-        goals,
-        profile,
-        recurring,
-        debts,
-        cards,
-        notifications,
-        isAuthenticated,
-        setAuthenticated,
-        isOnboarded: localIsOnboarded || !!user,
-        activeTab,
-        setActiveTab,
-        user,
-        isCloudSynced,
-        authLoading,
-        signUp,
-        signIn,
-        signOut,
-        resetFinancialData,
-        deleteAccount,
-        changePassword,
-        addTransaction,
-        updateTransaction,
-        deleteTransaction,
-        addCard,
-        updateCard,
-        deleteCard,
-        toggleCardActive,
-        recordCardPayment,
-        markNotificationRead,
-        markAllNotificationsRead,
-        deleteNotification,
-        clearAllNotifications,
-        requestNotificationPermission,
-        addCategory,
-        updateCategory,
-        deleteCategory,
-        addBudget,
-        updateBudget,
-        deleteBudget,
-        addGoal,
-        updateGoal,
-        deleteGoal,
-        addRecurring,
-        updateRecurring,
-        deleteRecurring,
-        addDebt,
-        updateDebt,
-        deleteDebt,
-        updateProfile,
-        backupData,
-        restoreData,
-        stealthMode,
-        setStealthMode
-      }}
-    >
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { DynamicIcon } from './DynamicIcon';
-import { Transaction, Category } from '../models/types';
+import { Transaction, Category, TransactionType } from '../models/types';
 import { compressImageFile } from '../utils/imageUtils';
 import { useDebounce } from '../utils/useDebounce';
 import { CategoryDetector, CategoryDetectionResult } from '../services/CategoryDetector';
@@ -43,7 +43,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
   const { categories, transactions, addTransaction, updateTransaction, profile, addCategory, cards, setActiveTab } = useApp();
 
   const [amount, setAmount] = useState<string>('');
-  const [type, setType] = useState<'income' | 'expense' | 'payment'>('expense');
+  const [type, setType] = useState<TransactionType | 'payment'>('expense');
   const [selectedCatId, setSelectedCatId] = useState<string>('');
   const [selectedSubCatId, setSelectedSubCatId] = useState<string>('');
   const [account, setAccount] = useState<string>('Tarjeta');

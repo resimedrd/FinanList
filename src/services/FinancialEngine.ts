@@ -348,6 +348,12 @@ export class FinancialEngine {
           if (tx.categoryId === 'cat_saving' || (tx.notes && tx.notes.includes('#goal:'))) {
             monthlySavings += amt;
           }
+        } else if (tx.type === 'transfer') {
+          // Las transferencias están estrictamente excluidas de monthlyExpense e monthlyIncome.
+          // Si la transferencia corresponde a un aporte a meta de ahorro (#goal:), computa como ahorro del mes:
+          if (tx.categoryId === 'cat_saving' || (tx.notes && tx.notes.includes('#goal:'))) {
+            monthlySavings += amt;
+          }
         }
       }
 
@@ -358,14 +364,20 @@ export class FinancialEngine {
         else if (isDebitOrExpense) investments -= amt;
       } else if (associatedCard) {
         // Transacción con tarjeta registrada: el saldo de la tarjeta es administrado por PaymentCard
-        // Si fue un pago a una tarjeta de crédito en efectivo (payment sin cardId pero con destinationCardId):
-        if (tx.type === 'payment' && !tx.cardId && tx.destinationCardId) {
+        // Si fue un pago o transferencia a una tarjeta de crédito en efectivo (sin cardId pero con destinationCardId):
+        if ((tx.type === 'payment' || tx.type === 'transfer') && !tx.cardId && tx.destinationCardId) {
           cash -= amt;
         }
       } else {
         // Sin tarjeta asociada: movimiento en Efectivo (incluye legacy 'Banco' que no tenía tarjeta)
         if (isIncome) cash += amt;
         else if (isDebitOrExpense) cash -= amt;
+        else if (tx.type === 'transfer') {
+          // Transferencia saliente desde efectivo hacia tarjeta, cuenta de destino o meta
+          if (tx.destinationCardId || tx.destinationAccountId || (tx.notes && tx.notes.includes('#goal:'))) {
+            cash -= amt;
+          }
+        }
       }
     });
 

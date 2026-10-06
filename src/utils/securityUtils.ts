@@ -85,11 +85,11 @@ export async function hashPin(
 }
 
 /**
- * Checks if a stored PIN is in legacy plaintext format (e.g., raw "1234" or not starting with "pbkdf2$").
+ * Checks if a stored PIN is in legacy plaintext format (e.g., raw "1234" or not starting with "pbkdf2$" or "sha256$").
  */
 export function isLegacyPlaintextPin(storedPin?: string): boolean {
   if (!storedPin) return false;
-  return !storedPin.startsWith('pbkdf2$');
+  return !storedPin.startsWith('pbkdf2$') && !storedPin.startsWith('sha256$');
 }
 
 /**
@@ -106,7 +106,7 @@ export function constantTimeEquals(a: string, b: string): boolean {
 
 /**
  * Verifies an input PIN against the stored PIN value.
- * Seamlessly validates both legacy plaintext PINs and modern PBKDF2 hashes.
+ * Seamlessly validates legacy plaintext PINs, modern SHA-256 hashes, and PBKDF2 hashes.
  */
 export async function verifyPin(inputPin: string, storedPin: string): Promise<boolean> {
   if (!inputPin || !storedPin) return false;
@@ -116,7 +116,13 @@ export async function verifyPin(inputPin: string, storedPin: string): Promise<bo
     return constantTimeEquals(inputPin, storedPin);
   }
 
-  // Modern hashed format: pbkdf2$<saltHex>$<hashHex>
+  // Modern SHA-256 format: sha256$<saltHex>$<hashHex>
+  if (storedPin.startsWith('sha256$')) {
+    const { CryptoService } = await import('../services/CryptoService');
+    return CryptoService.verifyPin(inputPin, storedPin);
+  }
+
+  // PBKDF2 format: pbkdf2$<saltHex>$<hashHex>
   const parts = storedPin.split('$');
   if (parts.length !== 3 || parts[0] !== 'pbkdf2') {
     return false;

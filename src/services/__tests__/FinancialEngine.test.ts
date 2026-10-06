@@ -569,4 +569,115 @@ describe('FinancialEngine', () => {
       expect(summary.nextCutoffInfo?.cardName).toBe('Mastercard Black');
     });
   });
+
+  describe('Transfer Transactions & Accounting Integrity', () => {
+    it('creates transfer transactions without increasing monthlyExpense', () => {
+      // 1. Transaction base: Income of 20,000, Operational Expense of 3,000
+      const incomeTx: Transaction = {
+        id: 'tx_inc_1',
+        amount: 20000,
+        type: 'income',
+        categoryId: 'cat_sal',
+        account: 'Efectivo',
+        date: today,
+        time: '09:00',
+        color: '#2ecc71',
+        icon: 'Cash'
+      };
+
+      const expenseTx: Transaction = {
+        id: 'tx_exp_1',
+        amount: 3000,
+        type: 'expense',
+        categoryId: 'cat_food_super',
+        account: 'Efectivo',
+        date: today,
+        time: '12:00',
+        color: '#ff4d4d',
+        icon: 'ShoppingBasket'
+      };
+
+      // 2. Transfer transaction: Transfer 5,000 from cash to debit account
+      const transferTx: Transaction = {
+        id: 'tx_trf_1',
+        amount: 5000,
+        type: 'transfer',
+        categoryId: 'cat_bills',
+        account: 'Efectivo',
+        sourceAccountId: 'cash',
+        destinationCardId: debitCard.id,
+        destinationAccountId: debitCard.id,
+        date: today,
+        time: '15:00',
+        notes: 'Traspaso a cuenta de débito',
+        color: '#3b82f6',
+        icon: 'ArrowRightLeft'
+      };
+
+      const summaryWithoutTransfer = FinancialEngine.calculateSummary([incomeTx, expenseTx], [debitCard]);
+      const summaryWithTransfer = FinancialEngine.calculateSummary([incomeTx, expenseTx, transferTx], [debitCard]);
+
+      // Monthly expenses MUST be strictly identical (3,000), not altered by the 5,000 transfer
+      expect(summaryWithoutTransfer.monthlyExpense).toBe(3000);
+      expect(summaryWithTransfer.monthlyExpense).toBe(3000);
+      expect(summaryWithTransfer.monthlyIncome).toBe(20000);
+    });
+
+    it('records goal contributions as transfer and tracks monthlySavings without inflating monthlyExpense', () => {
+      const incomeTx: Transaction = {
+        id: 'tx_inc_2',
+        amount: 15000,
+        type: 'income',
+        categoryId: 'cat_sal',
+        account: 'Efectivo',
+        date: today,
+        time: '09:00',
+        color: '#2ecc71',
+        icon: 'Cash'
+      };
+
+      const groceryExpenseTx: Transaction = {
+        id: 'tx_exp_2',
+        amount: 2500,
+        type: 'expense',
+        categoryId: 'cat_food_super',
+        account: 'Efectivo',
+        date: today,
+        time: '11:00',
+        color: '#ff4d4d',
+        icon: 'ShoppingBasket'
+      };
+
+      // Goal contribution saved as transfer
+      const goalTransferTx: Transaction = {
+        id: 'tx_goal_trf_1',
+        amount: 4000,
+        type: 'transfer',
+        categoryId: 'cat_saving',
+        account: 'Efectivo',
+        destinationAccountId: 'goal_vacaciones',
+        date: today,
+        time: '16:00',
+        notes: 'Aporte a meta: Vacaciones #goal:goal_vacaciones',
+        color: '#6366f1',
+        icon: 'Plane'
+      };
+
+      const summary = FinancialEngine.calculateSummary(
+        [incomeTx, groceryExpenseTx, goalTransferTx],
+        [debitCard],
+        [],
+        undefined,
+        [],
+        [{ id: 'goal_vacaciones', name: 'Vacaciones', targetAmount: 20000, currentAmount: 4000, icon: 'Plane', color: '#6366f1', targetDate: '2026-12-31' }]
+      );
+
+      // Operational expense remains solely 2,500
+      expect(summary.monthlyExpense).toBe(2500);
+      // Savings accurately captures the 4,000 goal contribution
+      expect(summary.monthlySavings).toBe(4000);
+      // Goals frozen balance captures the 4,000
+      expect(summary.goalsFrozenBalance).toBe(4000);
+    });
+  });
 });

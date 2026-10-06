@@ -104,13 +104,13 @@ export class StatsService {
     let savings = 0;
 
     monthlyTxs.forEach(t => {
-      if (t.type === 'expense') {
+      if (t.type === 'expense' || t.type === 'transfer') {
         const catId = t.categoryId || '';
         const catObj = categories.find(c => c.id === catId);
         const parentId = catObj?.parentId || '';
         const catNameLower = (catObj?.name || '').toLowerCase();
 
-        // 1. Ahorro / Inversión
+        // 1. Ahorro / Inversión (incluye transferencias de ahorro y aportes a metas)
         if (
           catId === 'cat_saving' ||
           catId === 'cat_inv' ||
@@ -120,9 +120,10 @@ export class StatsService {
         ) {
           savings += t.amount;
         }
-        // 2. Necesidades básicas
+        // 2. Necesidades básicas (SOLO si es gasto operativo de consumo real, nunca transferencias)
         else if (
-          catId === 'cat_food_super' ||
+          t.type === 'expense' &&
+          (catId === 'cat_food_super' ||
           catId === 'cat_bills' ||
           catId === 'cat_trans' ||
           catId === 'cat_health' ||
@@ -139,12 +140,12 @@ export class StatsService {
           catNameLower.includes('renta') ||
           catNameLower.includes('luz') ||
           catNameLower.includes('agua') ||
-          catNameLower.includes('internet')
+          catNameLower.includes('internet'))
         ) {
           needs += t.amount;
         }
-        // 3. Deseos y gastos discrecionales
-        else {
+        // 3. Deseos y gastos discrecionales (SOLO si es gasto operativo de consumo)
+        else if (t.type === 'expense') {
           wants += t.amount;
         }
       }
