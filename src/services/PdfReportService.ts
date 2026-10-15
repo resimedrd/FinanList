@@ -67,7 +67,7 @@ export const PdfReportService = {
     }
 
     // 2. Filter previous month's data
-    const prevTxs = transactions.filter(t => t.date.substring(0, 7) === currentYM);
+    const prevTxs = transactions.filter(t => t.date && t.date.substring(0, 7) === currentYM);
     
     // 3. Run Analyst Algorithms
     // A. Income, Expense & Savings

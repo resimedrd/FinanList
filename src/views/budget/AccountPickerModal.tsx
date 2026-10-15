@@ -1,6 +1,7 @@
 import React from 'react';
 import { DynamicIcon } from '../../components/DynamicIcon';
 import { PaymentCard, PaymentMethod } from '../../models/types';
+import { FinancialEngine } from '../../services/FinancialEngine';
 
 interface AccountPickerModalProps {
   isOpen: boolean;
@@ -82,7 +83,7 @@ export const AccountPickerModal: React.FC<AccountPickerModalProps> = ({
           {activeCards.map(c => {
             const isCredit = c.type === 'credit';
             const capacity = isCredit
-              ? Math.max(0, (c.creditLimit || 0) - (c.balanceUsed || 0))
+              ? FinancialEngine.getAvailableCredit(c)
               : ((c.currentBalance || 0) + (c.allowOverdraft ? (c.overdraftLimit || 0) : 0));
             const capacityLabel = isCredit ? 'Cupo disponible' : 'Saldo disponible';
 

@@ -364,10 +364,6 @@ export class FinancialEngine {
         else if (isDebitOrExpense) investments -= amt;
       } else if (associatedCard) {
         // Transacción con tarjeta registrada: el saldo de la tarjeta es administrado por PaymentCard
-        // Si fue un pago o transferencia a una tarjeta de crédito en efectivo (sin cardId pero con destinationCardId):
-        if ((tx.type === 'payment' || tx.type === 'transfer') && !tx.cardId && tx.destinationCardId) {
-          cash -= amt;
-        }
       } else {
         // Sin tarjeta asociada: movimiento en Efectivo (incluye legacy 'Banco' que no tenía tarjeta)
         if (isIncome) cash += amt;

@@ -33,7 +33,7 @@ export async function compressImageFile(
             width = maxWidth;
           } else {
             width = Math.round((width * maxHeight) / height);
-            height = Math.round((height * maxHeight) / img.height);
+            height = maxHeight;
           }
         }
 
