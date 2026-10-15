@@ -37,10 +37,22 @@ interface TransactionModalProps {
   onClose: () => void;
   editTransaction?: Transaction; // optional for edit mode
   defaultType?: 'income' | 'expense';
+  onManageCards?: () => void;
 }
 
-export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onClose, editTransaction, defaultType }) => {
+export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onClose, editTransaction, defaultType, onManageCards }) => {
   const { categories, transactions, addTransaction, updateTransaction, profile, addCategory, cards, setActiveTab } = useApp();
+
+  const handleNavigateToCards = () => {
+    if (onManageCards) {
+      onManageCards();
+    } else {
+      onClose();
+      setTimeout(() => {
+        setActiveTab('cards');
+      }, 50);
+    }
+  };
 
   const [amount, setAmount] = useState<string>('');
   const [type, setType] = useState<TransactionType | 'payment'>('expense');
@@ -559,10 +571,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
             <label className="input-label" style={{ margin: 0 }}>Método de Pago / Tarjeta Utilizada</label>
             <button
               type="button"
-              onClick={() => {
-                onClose();
-                setActiveTab('cards');
-              }}
+              onClick={handleNavigateToCards}
               style={{
                 fontSize: '11px',
                 color: 'var(--color-primary)',
@@ -649,6 +658,30 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
                 </button>
               );
             })}
+
+            {/* Quick Add Card Chip */}
+            <button
+              type="button"
+              onClick={handleNavigateToCards}
+              style={{
+                ...styles.scrollItem,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                borderRadius: '12px',
+                backgroundColor: 'var(--bg-card)',
+                borderColor: 'var(--color-primary)',
+                borderStyle: 'dashed',
+                color: 'var(--color-primary)',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+              title="Registrar una nueva tarjeta o cuenta bancaria"
+            >
+              <DynamicIcon name="PlusCircle" size={16} color="var(--color-primary)" />
+              <span>+ Añadir Tarjeta</span>
+            </button>
           </div>
 
           {/* Dynamic real-time feedback on card balance / credit limit */}

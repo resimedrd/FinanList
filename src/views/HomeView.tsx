@@ -271,6 +271,24 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
             </button>
 
             <button
+              onClick={() => setActiveTab('cards')}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '6px'
+              }}
+              title="Mis Tarjetas"
+              aria-label="Mis Tarjetas"
+            >
+              <DynamicIcon name="CreditCard" size={20} />
+            </button>
+
+            <button
               onClick={() => setStealthMode(!stealthMode)}
               style={{
                 background: 'none',
@@ -457,16 +475,21 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
           </div>
 
           {/* Chip 2: Cuentas / Débito */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '9px 12px',
-            borderRadius: '12px',
-            backgroundColor: 'var(--bg-input)',
-            border: '1px solid var(--border-color)',
-            minWidth: 0
-          }}>
+          <div 
+            onClick={() => setActiveTab('cards')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '9px 12px',
+              borderRadius: '12px',
+              backgroundColor: 'var(--bg-input)',
+              border: '1px solid var(--border-color)',
+              minWidth: 0,
+              cursor: 'pointer'
+            }}
+            title="Ver y gestionar tarjetas"
+          >
             <div style={{
               width: '28px',
               height: '28px',
@@ -481,8 +504,11 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
               <DynamicIcon name="CreditCard" size={15} />
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                Cuentas / Débito
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Cuentas / Débito</span>
+                <span style={{ color: 'var(--color-primary)', fontSize: '9px', fontWeight: '700' }}>
+                  {cards.length === 0 ? '+ Añadir' : '➔'}
+                </span>
               </div>
               <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {formatAccountVal(summary.debitCardsBalance ?? summary.bankBalance)}
@@ -490,6 +516,40 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
             </div>
           </div>
         </div>
+
+        {/* Banner cuando no hay tarjetas registradas */}
+        {cards.length === 0 && (
+          <div
+            onClick={() => setActiveTab('cards')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(99, 102, 241, 0.06)',
+              border: '1px dashed rgba(99, 102, 241, 0.35)',
+              cursor: 'pointer',
+              gap: '10px'
+            }}
+            title="Registrar tu primera tarjeta"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <DynamicIcon name="CreditCard" size={16} color="var(--color-primary)" />
+              <div style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                ¿Tienes tarjetas o cuentas de banco?
+              </div>
+            </div>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: '700',
+              color: 'var(--color-primary)',
+              flexShrink: 0
+            }}>
+              + Agregar tarjeta ➔
+            </span>
+          </div>
+        )}
 
         {/* Fila secundaria de Crédito Disponible (con menor peso visual para no confundirlo con dinero líquido) */}
         {summary.totalCreditAvailable > 0 && (

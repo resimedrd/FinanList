@@ -259,6 +259,14 @@ const MainLayout: React.FC = () => {
         onClose={handleCloseModal}
         editTransaction={editTx}
         defaultType={defaultType}
+        onManageCards={() => {
+          setModalOpen(false);
+          setEditTx(undefined);
+          if (window.history.state?.modal === 'transaction') {
+            window.history.replaceState({ tab: 'cards' }, '', '');
+          }
+          setActiveTab('cards');
+        }}
       />
 
       {/* PWA Installation Banner & Guide */}
