@@ -1,6 +1,7 @@
 import { Transaction, Budget, PaymentCard, Debt, Category, BudgetDistributionTargets, CustomDistributionResult } from '../models/types';
 import { parseLocalDate, getDaysInMonth } from '../utils/dateUtils';
 import { FinancialEngine } from './FinancialEngine';
+import { LocalRepository } from '../repositories/LocalRepository';
 
 export class StatsService {
   // Get date info
@@ -226,7 +227,11 @@ export class StatsService {
   }
 
   // Get total expense and percentage split by category
-  static getExpenseByCategory(transactions: Transaction[], dateFilter?: (dateStr: string) => boolean): Array<{
+  static getExpenseByCategory(
+    transactions: Transaction[],
+    categoriesOrDateFilter?: Category[] | ((dateStr: string) => boolean),
+    dateFilter?: (dateStr: string) => boolean
+  ): Array<{
     categoryId: string;
     name: string;
     amount: number;
@@ -234,8 +239,30 @@ export class StatsService {
     color: string;
     icon: string;
   }> {
+    let categories: Category[] = [];
+    let actualDateFilter = dateFilter;
+
+    if (typeof categoriesOrDateFilter === 'function') {
+      actualDateFilter = categoriesOrDateFilter;
+    } else if (Array.isArray(categoriesOrDateFilter)) {
+      categories = categoriesOrDateFilter;
+    }
+
+    if (!categories || categories.length === 0) {
+      try {
+        categories = LocalRepository.getCategories();
+      } catch {
+        categories = [];
+      }
+    }
+
+    const catMap = new Map<string, Category>();
+    categories.forEach(c => catMap.set(c.id, c));
+
     const currentYM = this.getCurrentYearMonth();
-    const monthlyExpenses = transactions.filter(tx => tx.type === 'expense' && (dateFilter ? dateFilter(tx.date) : (this.getYearMonth(tx.date) === currentYM)));
+    const monthlyExpenses = transactions.filter(tx => 
+      tx.type === 'expense' && (actualDateFilter ? actualDateFilter(tx.date) : (this.getYearMonth(tx.date) === currentYM))
+    );
     const totalExpense = monthlyExpenses.reduce((sum, tx) => sum + tx.amount, 0);
 
     if (totalExpense === 0) return [];
@@ -244,42 +271,58 @@ export class StatsService {
 
     monthlyExpenses.forEach(tx => {
       const catId = tx.categoryId;
+      const catObj = catMap.get(catId);
       if (!grouped[catId]) {
         grouped[catId] = {
-          name: tx.categoryId.startsWith('cat_') ? tx.categoryId.replace('cat_', '') : 'Categoría', // fallback name placeholder
+          name: catObj?.name || (tx.categoryId.startsWith('cat_') ? tx.categoryId.replace('cat_', '') : 'Categoría'),
           amount: 0,
-          color: tx.color || '#cccccc',
-          icon: tx.icon || 'Circle'
+          color: catObj?.color || tx.color || '#cccccc',
+          icon: catObj?.icon || tx.icon || 'Circle'
         };
       }
       grouped[catId].amount += tx.amount;
     });
 
-    // Resolve real names if possible (in context we will map them or pass actual transaction records with category info)
-    // We'll clean names up or map them in view. Let's return list sorted by amount desc.
+    // Resolve real names using user categories, standard dictionary, and human-friendly fallbacks
     return Object.entries(grouped).map(([id, info]) => {
-      // capitalize first letter
-      let displayName = info.name;
-      if (id === 'cat_food_super') displayName = 'Comida';
-      else if (id === 'cat_food_out') displayName = 'Restaurante y pedidos';
-      else if (id === 'cat_trans') displayName = 'Transporte';
-      else if (id === 'cat_fun') displayName = 'Entretenimiento';
-      else if (id === 'cat_shop') displayName = 'Compras';
-      else if (id === 'cat_bills') displayName = 'Servicios';
-      else if (id === 'cat_health') displayName = 'Salud';
-      else if (id === 'cat_travel') displayName = 'Viajes';
-      else if (id === 'cat_sal') displayName = 'Sueldo';
-      else if (id === 'cat_inv') displayName = 'Inversiones';
-      else if (id === 'cat_extra') displayName = 'Otros Ingresos';
-      else if (id === 'cat_emergency') displayName = 'Imprevistos / Emergencias';
+      const catObj = catMap.get(id);
+      let displayName = catObj?.name || info.name;
+
+      if (!catObj) {
+        if (id === 'cat_food_super') displayName = 'Comida';
+        else if (id === 'cat_food_out') displayName = 'Restaurante y pedidos';
+        else if (id === 'cat_trans') displayName = 'Transporte';
+        else if (id === 'cat_fun') displayName = 'Entretenimiento';
+        else if (id === 'cat_shop') displayName = 'Compras';
+        else if (id === 'cat_bills') displayName = 'Servicios';
+        else if (id === 'cat_health') displayName = 'Salud';
+        else if (id === 'cat_travel') displayName = 'Viajes';
+        else if (id === 'cat_sal') displayName = 'Sueldo';
+        else if (id === 'cat_inv') displayName = 'Inversiones';
+        else if (id === 'cat_extra') displayName = 'Otros Ingresos';
+        else if (id === 'cat_emergency') displayName = 'Imprevistos / Emergencias';
+        else if (id === 'sub_uber') displayName = 'Uber / Taxi';
+        else if (id === 'sub_gas') displayName = 'Gasolina';
+        else if (id === 'cat_personal') displayName = 'Cuidado Personal';
+        else if (id === 'cat_loan') displayName = 'Préstamos y Deudas';
+        else if (id === 'cat_saving') displayName = 'Ahorro';
+        else {
+          const cleaned = id.replace(/^cat_|^sub_/, '').trim();
+          if (/^\d+$/.test(cleaned) || /^\d+[a-z0-9]*$/i.test(cleaned)) {
+            displayName = 'Otros Gastos';
+          } else {
+            displayName = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+          }
+        }
+      }
 
       return {
         categoryId: id,
         name: displayName,
         amount: Number(info.amount.toFixed(2)),
         percentage: Number(((info.amount / totalExpense) * 100).toFixed(1)),
-        color: info.color,
-        icon: info.icon
+        color: catObj?.color || info.color,
+        icon: catObj?.icon || info.icon
       };
     }).sort((a, b) => b.amount - a.amount);
   }

@@ -5,6 +5,7 @@ import { DonutChart } from '../components/DonutChart';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { Transaction } from '../models/types';
 import { NotificationCenter } from '../components/NotificationCenter';
+import { BudgetReportModal } from '../components/BudgetReportModal';
 
 interface HomeViewProps {
   onOpenTransactionModal: (editTx?: Transaction, defaultType?: 'income' | 'expense') => void;
@@ -22,6 +23,7 @@ const FINANCE_QUOTES = [
 export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) => {
   const { transactions, budgets, profile, deleteTransaction, categories, setActiveTab, stealthMode, setStealthMode, goals, debts, cards, notifications } = useApp();
   const [showNotificationCenter, setShowNotificationCenter] = React.useState<boolean>(false);
+  const [showBudgetReportModal, setShowBudgetReportModal] = React.useState<boolean>(false);
   const unreadNotifsCount = notifications.filter(n => !n.isRead).length;
   // Check if monthly budget report should appear automatically (strictly on Day 1 of each month)
   const getMonthlyBudgetReportStatus = () => {
@@ -100,7 +102,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
   const quoteOfTheDay = FINANCE_QUOTES[quoteIdx];
 
   const summary = StatsService.getSummary(transactions, budgets, cards, undefined, debts, goals);
-  const chartData = StatsService.getExpenseByCategory(transactions);
+  const chartData = StatsService.getExpenseByCategory(transactions, categories);
   
   // Format Currency Helper (with Stealth support)
   const formatVal = (val: number) => {
@@ -289,6 +291,24 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
             </button>
 
             <button
+              onClick={() => setShowBudgetReportModal(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '6px'
+              }}
+              title="Reporte de Presupuesto"
+              aria-label="Reporte de Presupuesto"
+            >
+              <DynamicIcon name="FileText" size={20} />
+            </button>
+
+            <button
               onClick={() => setStealthMode(!stealthMode)}
               style={{
                 background: 'none',
@@ -387,7 +407,23 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
               }}
             >
               <DynamicIcon name="Download" size={14} />
-              <span>Descargar Reporte PDF</span>
+              <span>Descargar Reporte ({monthlyReportData.label})</span>
+            </button>
+
+            <button
+              onClick={() => setShowBudgetReportModal(true)}
+              className="btn btn-secondary"
+              style={{ 
+                padding: '8px 12px', 
+                fontSize: '12px', 
+                width: 'fit-content',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <DynamicIcon name="Sliders" size={14} />
+              <span>Personalizar Rango</span>
             </button>
 
             <button
@@ -827,7 +863,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
             }}
           />
         </div>
-        <div style={styles.budgetFooter}>
+        <div style={{ ...styles.budgetFooter, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
           {summary.budgetProgress > 90 ? (
             <span style={{ color: 'var(--color-danger)', fontSize: '11px', fontWeight: '500' }}>
               ⚠️ ¡Atención! Has superado el 90% de tu presupuesto.
@@ -837,6 +873,25 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
               Vas por buen camino en este ciclo.
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => setShowBudgetReportModal(true)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--color-primary)',
+              fontSize: '11px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 4px'
+            }}
+          >
+            <DynamicIcon name="FileText" size={13} />
+            <span>Ver reporte ➔</span>
+          </button>
         </div>
       </div>
 
@@ -924,6 +979,12 @@ export const HomeView: React.FC<HomeViewProps> = ({ onOpenTransactionModal }) =>
       <NotificationCenter
         isOpen={showNotificationCenter}
         onClose={() => setShowNotificationCenter(false)}
+      />
+
+      {/* Budget Report Modal */}
+      <BudgetReportModal
+        isOpen={showBudgetReportModal}
+        onClose={() => setShowBudgetReportModal(false)}
       />
     </div>
   );

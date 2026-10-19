@@ -5,11 +5,13 @@ import { LocalRepository } from '../repositories/LocalRepository';
 import { BudgetDistributionTargets } from '../models/types';
 import { IncomeExpenseBarChart, CashFlowLineChart } from '../components/FinancialCharts';
 import { DynamicIcon } from '../components/DynamicIcon';
+import { BudgetReportModal } from '../components/BudgetReportModal';
 
 export const StatsView: React.FC = () => {
-  const { transactions, budgets, profile, stealthMode, setStealthMode, goals, debts, categories, updateProfile } = useApp();
+  const { transactions, budgets, profile, stealthMode, setStealthMode, categories, updateProfile } = useApp();
 
   const [activeTab, setActiveTab] = useState<'rule' | 'comparison' | 'flow'>('rule');
+  const [showReportModal, setShowReportModal] = useState<boolean>(false);
 
   // Distribution Targets (Mi Fórmula)
   const [distributionTargets, setDistributionTargets] = useState<BudgetDistributionTargets>(() => {
@@ -53,7 +55,7 @@ export const StatsView: React.FC = () => {
   };
 
   // Calculations (Month level)
-  const chartData = StatsService.getExpenseByCategory(transactions);
+  const chartData = StatsService.getExpenseByCategory(transactions, categories);
   const monthlyComparisons = StatsService.getIncomeVsExpenseMonthly(transactions);
   const averages = StatsService.getAverages(transactions);
   const cashFlowTrend = StatsService.getCashFlowTrends(transactions);
@@ -62,51 +64,6 @@ export const StatsView: React.FC = () => {
   // Evaluación relativa frente a los objetivos de Mi Fórmula
   const rule = StatsService.calculateCustomDistribution(transactions, categories, distributionTargets);
 
-  const getPrevMonthYM = () => {
-    const now = new Date();
-    let m = now.getMonth() - 1;
-    let y = now.getFullYear();
-    if (m < 0) {
-      m = 11;
-      y -= 1;
-    }
-    return `${y}-${String(m + 1).padStart(2, '0')}`;
-  };
-
-  const getCurrentDateTimeLocal = () => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    const h = String(now.getHours()).padStart(2, '0');
-    const min = String(now.getMinutes()).padStart(2, '0');
-    return `${y}-${m}-${d}T${h}:${min}`;
-  };
-
-  const [reportPeriod, setReportPeriod] = useState<string>(getPrevMonthYM());
-  const [reportEmission, setReportEmission] = useState<string>(getCurrentDateTimeLocal());
-
-  const handleDownloadPdf = async () => {
-    try {
-      const { PdfReportService } = await import('../services/PdfReportService');
-      const doc = PdfReportService.generateMonthlyReport(
-        transactions,
-        budgets,
-        goals,
-        debts,
-        categories,
-        profile,
-        stealthMode,
-        reportPeriod,
-        reportEmission
-      );
-      doc.save(`FinanList_Reporte_${reportPeriod}.pdf`);
-      alert('Reporte PDF de salud financiera descargado con éxito.');
-    } catch (err) {
-      console.error(err);
-      alert('Hubo un error al generar el reporte en PDF.');
-    }
-  };
 
   const formatVal = (val: number) => {
     if (stealthMode) return `${profile.currency} ••••`;
@@ -705,64 +662,58 @@ export const StatsView: React.FC = () => {
         
         <div style={{ textAlign: 'center' }}>
           <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-primary)', marginBottom: '4px' }}>
-            Reporte mensual de presupuesto
+            Reporte Profesional de Presupuesto
           </h3>
-          <p style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4', maxWidth: '320px', margin: '0 auto' }}>
-            Consulta y descarga el informe detallado en PDF para cualquier mes, con balance de ingresos, gastos, desglose de presupuestos y KPIs financieros.
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4', maxWidth: '340px', margin: '0 auto' }}>
+            Genera un informe ejecutivo en PDF con rango de fechas flexible (este mes, mes anterior, últimos 30/90 días o personalizado), gráficos vectoriales, diagnósticos y score financiero.
           </p>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px', marginTop: '6px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' }}>
-            <label style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Mes a Analizar</label>
-            <input 
-              type="month" 
-              value={reportPeriod} 
-              onChange={(e) => setReportPeriod(e.target.value)} 
-              style={{
-                padding: '8px 12px',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                backgroundColor: 'var(--bg-input)',
-                color: 'var(--text-primary)',
-                fontFamily: 'inherit',
-                fontSize: '13px',
-                width: '100%',
-                boxSizing: 'border-box'
-              }} 
-            />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' }}>
-            <label style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Fecha y Hora de Emisión</label>
-            <input 
-              type="datetime-local" 
-              value={reportEmission} 
-              onChange={(e) => setReportEmission(e.target.value)} 
-              style={{
-                padding: '8px 12px',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                backgroundColor: 'var(--bg-input)',
-                color: 'var(--text-primary)',
-                fontFamily: 'inherit',
-                fontSize: '13px',
-                width: '100%',
-                boxSizing: 'border-box'
-              }} 
-            />
-          </div>
+        {/* Feature Badges */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center', maxWidth: '320px', marginTop: '4px' }}>
+          <span style={{ fontSize: '10px', fontWeight: '600', padding: '4px 8px', borderRadius: '6px', backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
+            🗓️ Rango Flexible
+          </span>
+          <span style={{ fontSize: '10px', fontWeight: '600', padding: '4px 8px', borderRadius: '6px', backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
+            📊 Gráficos Vectoriales
+          </span>
+          <span style={{ fontSize: '10px', fontWeight: '600', padding: '4px 8px', borderRadius: '6px', backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
+            💡 Diagnóstico 50/30/20
+          </span>
+          <span style={{ fontSize: '10px', fontWeight: '600', padding: '4px 8px', borderRadius: '6px', backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
+            🎯 Score Financiero
+          </span>
         </div>
 
         <button 
-          onClick={handleDownloadPdf}
+          type="button"
+          onClick={() => setShowReportModal(true)}
           className="btn btn-primary"
-          style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '10px', width: '100%', maxWidth: '300px' }}
+          style={{ 
+            display: 'flex', 
+            gap: '8px', 
+            alignItems: 'center',
+            justifyContent: 'center', 
+            marginTop: '10px', 
+            width: '100%', 
+            maxWidth: '300px',
+            padding: '12px 20px',
+            borderRadius: '12px',
+            fontWeight: '700',
+            fontSize: '13px'
+          }}
         >
-          <DynamicIcon name="Download" size={16} />
-          <span>Generar y Descargar PDF</span>
+          <DynamicIcon name="Sliders" size={16} />
+          <span>Configurar Rango y Generar PDF</span>
         </button>
       </div>
     </div>
+
+    {/* Budget Report Modal */}
+    <BudgetReportModal
+      isOpen={showReportModal}
+      onClose={() => setShowReportModal(false)}
+    />
   </div>
   );
 };
